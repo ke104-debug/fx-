@@ -197,6 +197,13 @@ def quick_chance(trigger, price):
     if score < send_at:
         print(f"(簡易監視の候補 {why}: 信頼度{score}で見送り)")
         return None
+    from . import positions
+    rel = positions.conflict(side)
+    if rel == "same":
+        print(f"(同じ向きを保有中のため重複して出さない) {why}")
+        return None
+    if rel == "opposite":
+        ng = ["保有中の取引と逆向き。先に保有中を決済するか検討"] + list(ng)
     reasons = [why] + [x for x in ok if not x.startswith(("相場状態", "価格帯"))]
     title, body = fmt.signal(side, price, stop, tgt, score, reasons, [x for x in ng] + stop_why,
                              f"{now.tz_convert(JST):%m/%d %H:%M} から最長48時間", serious)
@@ -280,6 +287,14 @@ def run(dry=False):
         cautions = [x for x in ng if not x.startswith("作戦シグナル")] + stop_why
         exit_h = {"eod": "本日 朝5時まで", "24h": "24時間", None: "48時間"}
         valid = EXIT_VALID.get(key, "48時間")
+        from . import positions as _pos
+        rel = _pos.conflict(s["side"])
+        if rel == "same":
+            print(f"(同じ向きを保有中のため重複して出さない) {LABEL[key]}")
+            st.setdefault("sent", []).append(sig_id)
+            continue
+        if rel == "opposite":
+            cautions = ["保有中の取引と逆向き。先に保有中を決済するか検討"] + cautions
         title, body = fmt.signal(s["side"], s["entry"], s["stop"], s.get("target"), score, reasons, cautions,
                                  f"{t.tz_convert(JST):%m/%d %H:%M} から{valid}", serious)
         send_at = learn.get("send_at", edge.SEND_AT)

@@ -160,6 +160,26 @@ def improve(learn: dict) -> dict:
     return learn
 
 
+def run_health() -> str | None:
+    """直近24時間の自動実行の回数 (GitHub の定期実行が間引かれていないかを毎朝確かめる)"""
+    import urllib.request
+    repo, token = os.getenv("GITHUB_REPOSITORY"), os.getenv("GITHUB_TOKEN")
+    if not repo or not token:
+        return None
+    since = (pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    out = []
+    for wf, label, expect in (("fx-quick.yml", "5分監視", 288), ("fx-auto.yml", "毎時の分析", 48)):
+        url = f"https://api.github.com/repos/{repo}/actions/workflows/{wf}/runs?event=schedule&created=>={since}&per_page=1"
+        try:
+            req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"})
+            n = json.load(urllib.request.urlopen(req, timeout=15)).get("total_count", 0)
+        except Exception:
+            continue
+        mark = "✅" if n >= expect * 0.8 else "⚠️" if n >= expect * 0.3 else "❌"
+        out.append(f"{mark} {label} {n}/{expect}回")
+    return "稼働 (直近24時間): " + " / ".join(out) if out else None
+
+
 def morning_message(h: pd.DataFrame, a: dict, fc: dict, reviews: list[dict], learn: dict) -> tuple[str, str]:
     """朝の通知 (視認性重視): 今日の判断と売買ライン → 昨日の振り返り の順"""
     from . import fmt
@@ -224,6 +244,12 @@ def morning_message(h: pd.DataFrame, a: dict, fc: dict, reviews: list[dict], lea
         else:
             lines.append("ずれは想定内（変更なし）")
         lines.append(f"通算: 方向 {allr.hit_dir.mean():.0%}（{len(allr)}日）")
+    try:
+        hl = run_health()
+        if hl:
+            lines += ["━━━━━━━━━━", hl]
+    except Exception:
+        pass
     lines.append("※AIの予想であり利益を保証しません")
     word = plan[0] if plan else "様子見"
     return f"{'🟢' if word == '買い' else '🔴' if word == '売り' else '⚪'} 今日のUSD/JPY: {word} 信頼度 {conf}%", "\n".join(lines)

@@ -29,3 +29,18 @@ jobs:
           git commit -qm "Dukascopy USD/JPY 1時間足 ${AFTER} か月分 (+$((AFTER - BEFORE)))"
           git push -qf origin data-duka-tmp:data-duka
           echo "$(ls data/duka | wc -l) files"
+      - name: 失敗したら Discord に知らせる
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          url = os.environ.get("DISCORD_WEBHOOK_URL")
+          if url:
+              run = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+              body = {"embeds": [{"title": "❌ AI_FX: 自動実行が失敗しました", "color": 15548997,
+                      "description": f"{os.environ['GITHUB_WORKFLOW']}\n詳細: {run}\nこの間は監視・通知が止まっています。"}]}
+              urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(body).encode(),
+                      headers={"Content-Type": "application/json", "User-Agent": "fxpred"}), timeout=15)
+          PY
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}

@@ -106,11 +106,14 @@ def run(dry=False):
         print("市場が閉まっているか、データが止まっています"); return
     c, sd, moves, worst, shock = check(bars)
     from . import positions
-    exits = positions.check(bars)
+    exits = positions.check(bars, save_state=not dry)
     st = json.load(open(STATE)) if os.path.exists(STATE) else {}
     lv = json.load(open(LEVELS)) if os.path.exists(LEVELS) else {}
     now = int(time.time())
     out = list(exits)
+    wk = positions.weekend_note(now)
+    if wk and st.get("weekend_warned") != time.strftime("%Y-%m-%d", time.gmtime(now)):
+        out.append(wk); st["weekend_warned"] = time.strftime("%Y-%m-%d", time.gmtime(now))
     # 1) 急変 (時間外でも送る)。同じ向きの急変は30分に1回まで (さらに大きくなった時は再通知)
     if shock:
         k, (mv, z) = worst

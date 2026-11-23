@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: "3.12", cache: pip }
+        with: { python-version: "3.13", cache: pip }
       - run: pip install -r requirements.txt
       - name: 取得済みデータを展開
         run: |
@@ -57,5 +57,20 @@ jobs:
           python -m fxpred.research --apply > research.txt
           python -c "from fxpred import notify; t=open('research.txt').read(); notify.send('🔬 精度向上の研究の結果', t[-3500:] + '\n詳細: reports/research.md', color=3447003)"
           git add reports config && (git diff --cached --quiet || git commit -qm "研究レポートを更新 (効果が確かめられたフィルター変更を反映)") && git pull --rebase -q && git push -q
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      - name: 失敗したら Discord に知らせる
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          url = os.environ.get("DISCORD_WEBHOOK_URL")
+          if url:
+              run = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+              body = {"embeds": [{"title": "❌ AI_FX: 自動実行が失敗しました", "color": 15548997,
+                      "description": f"{os.environ['GITHUB_WORKFLOW']}\n詳細: {run}\nこの間は監視・通知が止まっています。"}]}
+              urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(body).encode(),
+                      headers={"Content-Type": "application/json", "User-Agent": "fxpred"}), timeout=15)
+          PY
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}

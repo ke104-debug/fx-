@@ -54,7 +54,8 @@ def no_trade(h: pd.DataFrame, now: pd.Timestamp, regime: str, tf_trends: dict, a
         why.append("米国の祝日で取引が薄い")
     if now.weekday() == 4 and now.hour >= 19 or now.weekday() == 5:
         why.append("週末の手前で、週明けに窓を開けるリスク")
-    if 20 <= now.hour < 23:
+    ny_h = now.tz_convert("America/New_York").hour
+    if 16 <= ny_h < 19:   # ニューヨーク市場の終わり (17時) の前後。夏時間で日本時間がずれるので NY 時間で判定
         why.append("ニューヨーク終盤〜早朝はスプレッドが広がりやすい時間帯")
     if anom.get("level") == "急変":
         why.append("急変の最中 (下げ止まり・上げ止まりの確認前)")

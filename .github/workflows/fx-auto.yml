@@ -18,6 +18,7 @@ on:
         default: false
 permissions:
   contents: write
+  actions: read
 concurrency: fx-shared
 jobs:
   run:
@@ -26,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: "3.12", cache: pip }
+        with: { python-version: "3.13", cache: pip }
       - run: pip install -r requirements.txt
       - name: 前回の状態と記録を復元
         uses: actions/cache/restore@v4
@@ -44,6 +45,7 @@ jobs:
         run: python -m fxpred auto ${{ inputs.morning && '--morning' || '' }}
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          GITHUB_TOKEN: ${{ github.token }}
       - name: 状態と記録を保存
         if: always()
         uses: actions/cache/save@v4
@@ -59,3 +61,18 @@ jobs:
             git commit -m "記録を更新 $(date -u +%Y-%m-%dT%H:%MZ)"
             git pull --rebase -q && git push -q
           fi
+      - name: 失敗したら Discord に知らせる
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          url = os.environ.get("DISCORD_WEBHOOK_URL")
+          if url:
+              run = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+              body = {"embeds": [{"title": "❌ AI_FX: 自動実行が失敗しました", "color": 15548997,
+                      "description": f"{os.environ['GITHUB_WORKFLOW']}\n詳細: {run}\nこの間は監視・通知が止まっています。"}]}
+              urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(body).encode(),
+                      headers={"Content-Type": "application/json", "User-Agent": "fxpred"}), timeout=15)
+          PY
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}

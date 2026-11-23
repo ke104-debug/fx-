@@ -20,10 +20,13 @@ FOMC = ["2024-01-31", "2024-03-20", "2024-05-01", "2024-06-12", "2024-07-31", "2
 
 
 def events(index: pd.DatetimeIndex) -> pd.DatetimeIndex:
-    ev = [pd.Timestamp(d + " 18:00", tz="UTC") for d in FOMC]
+    """重要指標の時刻 (UTC)。米国の夏時間を考慮する:
+    FOMC はニューヨーク時間 14:00 (日本時間 夏 3:00 / 冬 4:00)、雇用統計は原則第1金曜のニューヨーク時間 8:30 (夏 21:30 / 冬 22:30)"""
+    ny = "America/New_York"
+    ev = [pd.Timestamp(d + " 14:00", tz=ny).tz_convert("UTC") for d in FOMC]
     for m in pd.date_range(index[0].normalize().tz_localize(None), index[-1].tz_localize(None), freq="MS"):
         fri = m + pd.offsets.Week(weekday=4) if m.weekday() != 4 else m
-        ev.append(pd.Timestamp(fri.date().isoformat() + " 12:30", tz="UTC"))
+        ev.append(pd.Timestamp(fri.date().isoformat() + " 08:30", tz=ny).tz_convert("UTC"))
     return pd.DatetimeIndex(sorted(ev))
 
 

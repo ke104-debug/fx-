@@ -19,6 +19,30 @@ def save(ps: list[dict]):
     json.dump(ps, open(PATH, "w"), ensure_ascii=False, indent=1)
 
 
+def conflict(side: int) -> str | None:
+    """保有中との関係: 同じ向きを保有中なら "same"、逆向きを保有中なら "opposite" """
+    ps = load()
+    if any(p["side"] == side for p in ps):
+        return "same"
+    if any(p["side"] == -side for p in ps):
+        return "opposite"
+    return None
+
+
+def weekend_note(now_epoch: int) -> tuple[str, str, int] | None:
+    """金曜の夜 (日本時間 23時台) に保有中があれば、週末をまたぐ前の確認を送る"""
+    t = time.gmtime(now_epoch + 9 * 3600)   # 日本時間
+    if not (t.tm_wday == 4 and t.tm_hour == 23):
+        return None
+    ps = load()
+    if not ps:
+        return None
+    lines = [f"・{'買い' if p['side'] == 1 else '売り'} {p['entry']:.2f}（損切り {p['stop']:.2f} / 利確 {p['target']:.2f}）" for p in ps]
+    return ("📅 週末前の確認 USD/JPY",
+            "保有中:\n" + "\n".join(lines) + "\n━━━━━━━━━━\n週明けは窓を開けて、損切りより不利な価格で決済されることがあります。\n"
+            "週末をまたがずに決済するか、損切りの位置を見直すことをおすすめします。", 16776960)
+
+
 def add(side: int, entry: float, stop: float, target: float, key: str, t_epoch: int):
     ps = load()
     ps.append({"id": f"{key}-{t_epoch}", "side": side, "entry": round(entry, 3), "stop": round(stop, 3), "target": round(target, 3),
@@ -36,7 +60,7 @@ def _record(p, px, why, t):
                     time.strftime("%Y-%m-%d %H:%M", time.gmtime(p["opened"])), time.strftime("%Y-%m-%d %H:%M", time.gmtime(t))])
 
 
-def check(bars: list[tuple]) -> list[tuple[str, str, int]]:
+def check(bars: list[tuple], save_state: bool = True) -> list[tuple[str, str, int]]:
     """1分足 (t, o, h, l, c) で保有中を確認し、決済などの通知 (タイトル, 本文, 色) を返す"""
     ps, keep, out = load(), [], []
     now = bars[-1][0]
@@ -66,7 +90,8 @@ def check(bars: list[tuple]) -> list[tuple[str, str, int]]:
                        "保有期限です。損益にかかわらず決済を推奨します。")
                     + "\n※注文で損切り・利確を入れていれば自動で決済済みです")
             out.append((title, body, 5763719 if why == "利確" else 15548997 if why == "損切り" else 9807270))
-            _record(p, px, why, t)
+            if save_state:
+                _record(p, px, why, t)
             continue
         # 利確までの半分まで進んだら、損切りを建値に動かす提案 (1回だけ)
         prog = side * (c - e) / max(abs(tgt - e), 1e-9)
@@ -77,7 +102,8 @@ def check(bars: list[tuple]) -> list[tuple[str, str, int]]:
             p["half_sent"] = True
         p["checked"] = now
         keep.append(p)
-    save(keep)
+    if save_state and (ps or os.path.exists(PATH)):
+        save(keep)
     return out
 
 
