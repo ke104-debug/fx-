@@ -3,42 +3,85 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans+JP:wght@400;500;700&display=swap">
 <style>
-/* Layout: one narrow column, controls on top, verdict cards read like a dealer's ticket */
+/* Layout: one narrow column for a phone; price header, then status, AI analysis, technical forecast, history */
 :root {
-  --bg: #eef1f4; --panel: #ffffff; --ink: #14202b; --muted: #5b6874; --line: #d3dae1;
+  --bg: #eef1f4; --panel: #ffffff; --ink: #14202b; --muted: #5b6874; --line: #d3dae1; --track: #e3e8ed;
   --accent: #1f5f8b; --accent-ink: #ffffff;
   --buy: #12775a; --buy-bg: #dff3ea; --sell: #b3322e; --sell-bg: #fbe4e2; --hold: #8a6100; --hold-bg: #fbf0d4;
   --font-body: "IBM Plex Sans JP", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
   --font-num: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #0f151b; --panel: #17212a; --ink: #e4eaf0; --muted: #93a1ad; --line: #2a3742;
+  --bg: #0f151b; --panel: #17212a; --ink: #e4eaf0; --muted: #93a1ad; --line: #2a3742; --track: #22303b;
   --accent: #5aa6d8; --accent-ink: #0b1218;
   --buy: #4cc79d; --buy-bg: #12322a; --sell: #f07a74; --sell-bg: #3a1c1b; --hold: #e3b64c; --hold-bg: #342a12;
   color-scheme: dark } }
 :root[data-theme="dark"] {
-  --bg: #0f151b; --panel: #17212a; --ink: #e4eaf0; --muted: #93a1ad; --line: #2a3742;
+  --bg: #0f151b; --panel: #17212a; --ink: #e4eaf0; --muted: #93a1ad; --line: #2a3742; --track: #22303b;
   --accent: #5aa6d8; --accent-ink: #0b1218;
   --buy: #4cc79d; --buy-bg: #12322a; --sell: #f07a74; --sell-bg: #3a1c1b; --hold: #e3b64c; --hold-bg: #342a12;
   color-scheme: dark }
 body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.65; }
-.wrap { max-width: 680px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 48px; display: grid; gap: 20px; }
-header { display: grid; gap: 4px; }
-h1 { font-size: 1.5rem; margin: 0; font-weight: 700; letter-spacing: .02em; text-wrap: balance; }
-h1 span { font-family: var(--font-num); color: var(--accent); }
-.sub { color: var(--muted); font-size: .85rem; margin: 0; }
+.wrap { max-width: 680px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 48px; display: grid; gap: 18px; }
+header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 16px; }
+h1 { font-size: 1.35rem; margin: 0; font-weight: 700; letter-spacing: .02em; }
+h1 b { font-family: var(--font-num); font-weight: 600; }
+.quote { text-align: right; }
+.quote .px { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 1.7rem; font-weight: 600; line-height: 1.1; }
+.quote .at { font-size: .78rem; color: var(--muted); }
 h2 { font-size: .8rem; margin: 0; color: var(--muted); font-weight: 500; letter-spacing: .08em; }
-.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 14px; }
-.chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.chip { font-family: var(--font-num); font-size: .9rem; border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 999px; padding: 7px 12px; cursor: pointer; }
-.chip[aria-pressed="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
-.chip:focus-visible, button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 14px; min-width: 0; }
+.panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.stamp { font-family: var(--font-num); font-size: .75rem; color: var(--muted); }
+/* system status */
+.sys { display: grid; gap: 0; margin: 0; }
+.sys div { display: grid; grid-template-columns: 9.5em 1fr; gap: 12px; padding: 7px 0; border-top: 1px solid var(--line); font-size: .9rem; }
+.sys div:first-child { border-top: 0; padding-top: 0; }
+.sys dt { color: var(--muted); font-size: .82rem; }
+.sys dd { margin: 0; min-width: 0; overflow-wrap: anywhere; display: flex; gap: 8px; align-items: baseline; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); transform: translateY(-1px); }
+.dot.ok { background: var(--buy); } .dot.warn { background: var(--hold); } .dot.bad { background: var(--sell); }
+/* verdicts */
+.verdict-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.verdict { font-family: var(--font-num); font-weight: 600; letter-spacing: .06em; border-radius: 8px; padding: 6px 16px; font-size: 1.3rem; }
+.v-BUY { color: var(--buy); background: var(--buy-bg); }
+.v-SELL { color: var(--sell); background: var(--sell-bg); }
+.v-HOLD { color: var(--hold); background: var(--hold-bg); }
+.v-meta { font-size: .85rem; color: var(--muted); }
+.summary { margin: 0; }
+dl.kv { margin: 0; display: grid; grid-template-columns: 7em 1fr; gap: 8px 12px; font-size: .92rem; }
+dl.kv dt { color: var(--muted); font-size: .8rem; padding-top: 2px; }
+dl.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.sources { font-size: .8rem; color: var(--muted); display: grid; gap: 2px; margin: 6px 0 0; padding-left: 1.2em; }
+.sources a { overflow-wrap: anywhere; }
+a { color: var(--accent); }
+/* technical */
+.gauge { display: grid; gap: 6px; }
+.gauge-bar { position: relative; height: 10px; border-radius: 5px; background: linear-gradient(90deg, var(--sell-bg), var(--track) 50%, var(--buy-bg)); }
+.gauge-mark { position: absolute; top: -4px; width: 4px; height: 18px; border-radius: 2px; background: var(--ink); transform: translateX(-2px); }
+.gauge-scale { display: flex; justify-content: space-between; font-size: .72rem; color: var(--muted); font-family: var(--font-num); }
+.tf { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .88rem; }
+th, td { text-align: left; padding: 7px 8px; border-top: 1px solid var(--line); white-space: nowrap; }
+thead th { border-top: 0; color: var(--muted); font-weight: 500; font-size: .78rem; }
+td.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.up { color: var(--buy); } .down { color: var(--sell); } .flat { color: var(--muted); }
+.models { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.model { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 4px; }
+.model .lbl { font-size: .8rem; color: var(--muted); }
+.model .val { font-family: var(--font-num); font-size: 1.25rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.model .acc { font-size: .78rem; color: var(--muted); }
+.reasons { margin: 0; padding-left: 1.2em; font-size: .9rem; }
+.macro { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 4px 16px; font-size: .84rem; }
+.macro div { display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid var(--line); padding: 5px 0; min-width: 0; }
+.macro span:last-child { font-family: var(--font-num); font-size: .78rem; text-align: right; overflow-wrap: anywhere; }
+/* request */
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 label { font-size: .85rem; color: var(--muted); display: flex; gap: 8px; align-items: center; }
 select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
 .go { font: inherit; font-weight: 700; font-size: 1rem; background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 8px; padding: 12px 20px; cursor: pointer; flex: 1 1 200px; }
 .go:disabled { opacity: .5; cursor: default; }
-.status { display: grid; gap: 10px; }
+button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .steps { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: .9rem; }
 .steps li { display: flex; gap: 10px; align-items: baseline; color: var(--muted); }
 .steps li::before { content: "○"; font-family: var(--font-num); }
@@ -46,86 +89,96 @@ select { font: inherit; color: var(--ink); background: var(--panel); border: 1px
 .steps li.on::before { content: "●"; color: var(--accent); }
 .steps li.done::before { content: "✓"; color: var(--buy); }
 .clock { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
-.note { font-size: .85rem; color: var(--muted); margin: 0; }
-.err { font-size: .9rem; color: var(--sell); margin: 0; }
-a { color: var(--accent); }
-.ticket { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-.ticket-head { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px dashed var(--line); flex-wrap: wrap; }
-.pair { font-family: var(--font-num); font-weight: 600; font-size: 1.15rem; }
-.price { font-family: var(--font-num); font-variant-numeric: tabular-nums; color: var(--muted); font-size: .9rem; }
-.verdict { font-family: var(--font-num); font-weight: 600; letter-spacing: .06em; border-radius: 6px; padding: 4px 12px; font-size: 1rem; }
-.v-BUY { color: var(--buy); background: var(--buy-bg); }
-.v-SELL { color: var(--sell); background: var(--sell-bg); }
-.v-HOLD { color: var(--hold); background: var(--hold-bg); }
-.ticket-body { padding: 12px 16px 16px; display: grid; gap: 10px; }
-dl { margin: 0; display: grid; grid-template-columns: 6.5em 1fr; gap: 6px 12px; font-size: .92rem; }
-dt { color: var(--muted); font-size: .8rem; padding-top: 2px; }
-dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
-.summary { margin: 0; font-size: .95rem; }
-.sources { font-size: .8rem; color: var(--muted); display: grid; gap: 2px; margin: 0; padding-left: 1.2em; }
-.sources a { overflow-wrap: anywhere; }
-.history { display: grid; gap: 0; }
-.hrow { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; padding: 10px 0; border-top: 1px solid var(--line); font-size: .88rem; background: none; border-left: 0; border-right: 0; border-bottom: 0; color: inherit; text-align: left; font-family: inherit; cursor: pointer; width: 100%; }
+.note { font-size: .84rem; color: var(--muted); margin: 0; }
+.err { font-size: .88rem; color: var(--sell); margin: 0; overflow-wrap: anywhere; }
+.code { font-family: var(--font-num); font-size: .75rem; color: var(--muted); }
+/* history */
+.hrow { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; padding: 10px 0; border: 0; border-top: 1px solid var(--line); font-size: .88rem; background: none; color: inherit; text-align: left; font-family: inherit; cursor: pointer; width: 100%; }
 .hrow:first-child { border-top: 0; }
 .htime { font-family: var(--font-num); font-variant-numeric: tabular-nums; color: var(--muted); font-size: .8rem; }
-.hverd { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
-.mini { font-family: var(--font-num); font-size: .78rem; border-radius: 4px; padding: 1px 6px; }
+.mini { font-family: var(--font-num); font-size: .78rem; border-radius: 4px; padding: 1px 6px; justify-self: start; }
 .empty { color: var(--muted); font-size: .9rem; margin: 0; }
 footer { font-size: .78rem; color: var(--muted); display: grid; gap: 6px; }
 footer p { margin: 0; }
-@media (prefers-reduced-motion: no-preference) { .ticket { animation: rise .25s ease-out both; } @keyframes rise { from { transform: translateY(6px); } to { transform: none; } } }
-@media (max-width: 420px) { dl { grid-template-columns: 1fr; gap: 2px; } dd { margin-bottom: 6px; } }
+@media (max-width: 420px) { dl.kv { grid-template-columns: 1fr; gap: 2px; } dl.kv dd { margin-bottom: 6px; } .sys div { grid-template-columns: 1fr; gap: 0; } }
 </style>
 
 <div class="wrap">
   <header>
-    <h1>AI FX 診断 <span>USD</span></h1>
-    <p class="sub">チャート・AIモデル・ニュースと経済指標から、買い / 売り / 様子見を判断します</p>
+    <h1>AI FX 診断 <b>USD/JPY</b></h1>
+    <div class="quote"><div class="px" id="px">—</div><div class="at" id="px-at">データ待ち</div></div>
   </header>
 
-  <section class="panel" aria-labelledby="h-pairs">
-    <h2 id="h-pairs">通貨ペア</h2>
-    <div class="chips" id="chips"></div>
+  <section class="panel" aria-labelledby="h-sys">
+    <div class="panel-head"><h2 id="h-sys">システム状況</h2></div>
+    <dl class="sys" id="sys">
+      <div><dt>データ取得</dt><dd><span class="dot" id="d-data"></span><span id="sys-data">読み込み中</span></dd></div>
+      <div><dt>AI市場分析</dt><dd><span class="dot" id="d-ai"></span><span id="sys-ai">読み込み中</span></dd></div>
+      <div><dt>分析の依頼</dt><dd><span class="dot" id="d-req"></span><span id="sys-req">確認中</span></dd></div>
+      <div><dt>診断の記録</dt><dd><span id="sys-journal">—</span></dd></div>
+      <div><dt>過去検証</dt><dd><span id="sys-bt">—</span></dd></div>
+    </dl>
+  </section>
+
+  <section class="panel" aria-labelledby="h-ai">
+    <div class="panel-head"><h2 id="h-ai">AIによる市場分析</h2><span class="stamp" id="ai-at"></span></div>
+    <p class="empty" id="ai-empty">まだ分析結果がありません。下の「最新の分析を依頼」から実行してください。</p>
+    <div id="ai-body" hidden style="display:grid;gap:12px">
+      <div class="verdict-row"><span class="verdict" id="ai-verdict"></span><span class="v-meta" id="ai-meta"></span></div>
+      <p class="summary" id="ai-summary"></p>
+      <dl class="kv" id="ai-kv"></dl>
+      <details id="ai-src-wrap"><summary class="note">情報源</summary><ol class="sources" id="ai-src"></ol></details>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-tech">
+    <div class="panel-head"><h2 id="h-tech">テクニカル予想</h2><span class="stamp" id="tech-at"></span></div>
+    <p class="empty" id="tech-empty">テクニカルの計算結果を待っています。</p>
+    <div id="tech-body" hidden style="display:grid;gap:16px">
+      <div class="gauge">
+        <div class="verdict-row"><span class="verdict" id="tech-overall"></span><span class="v-meta" id="tech-score"></span></div>
+        <div class="gauge-bar" aria-hidden="true"><span class="gauge-mark" id="tech-mark"></span></div>
+        <div class="gauge-scale"><span>下落寄り −6</span><span>0</span><span>+6 上昇寄り</span></div>
+      </div>
+      <div class="tf"><table>
+        <thead><tr><th>時間足</th><th>トレンド</th><th>RSI(14)</th><th>MACD</th></tr></thead>
+        <tbody id="tf-body"></tbody>
+      </table></div>
+      <ul class="reasons" id="tech-reasons"></ul>
+      <div>
+        <h2 style="margin-bottom:8px">AIモデル (LightGBM) の上昇確率</h2>
+        <div class="models" id="models"></div>
+      </div>
+      <dl class="kv" id="tech-kv"></dl>
+      <details><summary class="note">マクロ市場の動き</summary><div class="macro" id="macro"></div></details>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-req">
+    <h2 id="h-req">最新の分析を依頼</h2>
     <div class="row">
       <label for="horizon">想定期間
-        <select id="horizon">
-          <option value="1">1時間</option>
-          <option value="4" selected>4時間</option>
-          <option value="24">1日</option>
-        </select>
+        <select id="horizon"><option value="1">1時間</option><option value="4" selected>4時間</option><option value="24">1日</option></select>
       </label>
+      <button class="go" id="go" type="button">USD/JPY を分析する</button>
     </div>
-    <div class="row">
-      <button class="go" id="go" type="button">診断する</button>
+    <p class="note">Claude Code のクラウドセッションでチャート計算とニュース調査を行います。3〜8分ほどかかります。</p>
+    <div id="status" hidden aria-live="polite" style="display:grid;gap:10px">
+      <ol class="steps">
+        <li id="s1">分析用セッションを起動</li>
+        <li id="s2">チャート計算とニュース調査 <span class="clock" id="clock"></span></li>
+        <li id="s3">結果を受け取り、このページを更新</li>
+      </ol>
+      <p class="note" id="status-note"></p>
+      <p class="note" id="session-link" hidden><a target="_blank" rel="noopener" id="session-a">Claude Code で進行を見る</a></p>
     </div>
-    <p class="note" id="cap-note">診断には Claude Code のクラウドセッションを使います。1回あたり3〜8分ほどかかります。</p>
-  </section>
-
-  <section class="panel status" id="status" hidden aria-live="polite">
-    <h2>進行状況</h2>
-    <ol class="steps">
-      <li id="s1">分析用セッションを起動</li>
-      <li id="s2">チャート分析とニュース調査 <span class="clock" id="clock"></span></li>
-      <li id="s3">診断結果を受け取り</li>
-    </ol>
-    <p class="note" id="status-note"></p>
-    <p class="note" id="session-link" hidden><a target="_blank" rel="noopener" id="session-a">Claude Code で進行を見る</a></p>
-    <p class="err" id="status-err" hidden></p>
-  </section>
-
-  <section id="result" hidden style="display:grid;gap:14px">
-    <h2 id="result-title">最新の診断</h2>
-    <p class="summary" id="result-summary"></p>
-    <div id="tickets" style="display:grid;gap:14px"></div>
-    <details>
-      <summary class="note">情報源</summary>
-      <ol class="sources" id="sources"></ol>
-    </details>
+    <p class="err" id="err" hidden></p>
+    <p class="note" id="alt">ボタンが使えないときは、Claude アプリの ai-fx- のセッションで「ドル円を分析して」と送ってください。結果はこのページに反映されます。</p>
   </section>
 
   <section class="panel" aria-labelledby="h-hist">
-    <h2 id="h-hist">診断の履歴</h2>
-    <div class="history" id="history"><p class="empty" id="hist-empty">まだ診断はありません。上のボタンで最初の診断を実行すると、ここに残ります。</p></div>
+    <h2 id="h-hist">分析の履歴</h2>
+    <div id="history"><p class="empty">まだ履歴はありません。</p></div>
   </section>
 
   <footer>
@@ -135,211 +188,231 @@ footer p { margin: 0; }
 </div>
 
 <script>
-const PAIRS = ["USD/JPY", "EUR/USD", "GBP/USD", "AUD/USD", "NZD/USD", "USD/CAD", "USD/CHF"];
 const CCR = "Claude Code Remote";
 const REPO = "https://github.com/kpkpkakp0210-debug/ai-fx-";
 const ENV_ID = "env_01Mf75ukduSxBFwy4WqVqiAq";
 const JOB_KEY = "aifx-job";
 const POLL_MS = 15000, TIMEOUT_MS = 25 * 60 * 1000;
-
 const $ = id => document.getElementById(id);
-const selected = new Set(["USD/JPY"]);
-let mcp = null, db = null, pollTimer = null, clockTimer = null;
+let mcp = null, db = null, pollTimer = null, clockTimer = null, latest = null;
 
-function store(get, val) {
-  try { if (get) return JSON.parse(localStorage.getItem(JOB_KEY) || "null"); if (val) localStorage.setItem(JOB_KEY, JSON.stringify(val)); else localStorage.removeItem(JOB_KEY); } catch { return null; }
+const VJA = { BUY: "買い", SELL: "売り", HOLD: "様子見" };
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function store(get, val) { try { if (get) return JSON.parse(localStorage.getItem(JOB_KEY) || "null"); if (val) localStorage.setItem(JOB_KEY, JSON.stringify(val)); else localStorage.removeItem(JOB_KEY); } catch { return null; } }
+function setDot(id, state) { $(id).className = "dot " + (state || ""); }
+function utcToLocal(s) {
+  if (!s) return "";
+  const d = new Date(s.replace(" ", "T") + (s.includes("Z") || s.includes("+") ? "" : "Z"));
+  if (isNaN(d)) return s;
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+function ageMin(s) { const d = new Date(s.replace(" ", "T") + "Z"); return isNaN(d) ? null : (Date.now() - d) / 60000; }
+
+// ---------- render: AI analysis
+function renderAI(ai) {
+  if (!ai || !ai.verdict) { $("ai-empty").hidden = false; $("ai-body").hidden = true; return; }
+  $("ai-empty").hidden = true; $("ai-body").hidden = false;
+  const v = String(ai.verdict).toUpperCase();
+  $("ai-verdict").className = "verdict v-" + v; $("ai-verdict").textContent = `${v} ${VJA[v] || ""}`;
+  $("ai-meta").textContent = `想定 ${ai.horizon_h ?? "?"} 時間 ・ 確信度 ${ai.confidence || "-"}${ai.price ? " ・ 分析時 " + ai.price : ""}`;
+  $("ai-summary").textContent = ai.summary || "";
+  $("ai-at").textContent = ai.time_utc ? utcToLocal(ai.time_utc) + " 分析" : "";
+  const kv = $("ai-kv"); kv.replaceChildren();
+  for (const [k, label] of [["fundamental", "ニュース・指標"], ["macro", "マクロ市場"], ["technical", "チャート"], ["levels", "注目の価格"], ["events", "予定"], ["risk", "リスク"]])
+    if (ai[k]) kv.append(el("dt", null, label), el("dd", null, ai[k]));
+  const src = $("ai-src"); src.replaceChildren();
+  for (const s of ai.sources || []) {
+    if (!/^https?:\/\//.test(s.url || "")) continue;
+    const li = el("li"); const a = el("a", null, s.title || s.url); a.href = s.url; a.target = "_blank"; a.rel = "noopener"; li.append(a); src.append(li);
+  }
+  $("ai-src-wrap").hidden = !src.children.length;
+  const age = ai.time_utc ? ageMin(ai.time_utc) : null;
+  $("sys-ai").textContent = ai.time_utc ? `最終分析 ${utcToLocal(ai.time_utc)}${age != null ? `（${age < 90 ? Math.round(age) + "分前" : Math.round(age / 60) + "時間前"}）` : ""}` : "記録あり";
+  setDot("d-ai", age != null && age < 240 ? "ok" : "warn");
 }
 
-// ---- pair chips
-for (const p of PAIRS) {
-  const b = document.createElement("button");
-  b.type = "button"; b.className = "chip"; b.textContent = p; b.id = "chip-" + p.replace("/", "");
-  b.setAttribute("aria-pressed", selected.has(p));
-  b.onclick = () => { selected.has(p) ? selected.delete(p) : selected.add(p); if (!selected.size) selected.add(p); syncChips(); };
-  $("chips").appendChild(b);
-}
-const all = document.createElement("button");
-all.type = "button"; all.className = "chip"; all.textContent = "全ペア"; all.id = "chip-all";
-all.onclick = () => { const full = selected.size === PAIRS.length; selected.clear(); full ? selected.add("USD/JPY") : PAIRS.forEach(p => selected.add(p)); syncChips(); };
-$("chips").appendChild(all);
-function syncChips() {
-  for (const p of PAIRS) $("chip-" + p.replace("/", "")).setAttribute("aria-pressed", selected.has(p));
-  all.setAttribute("aria-pressed", selected.size === PAIRS.length);
+// ---------- render: technical + system
+function trendClass(t) { return t === "上昇" ? "up" : t === "下降" ? "down" : "flat"; }
+function renderTech(t) {
+  if (!t || !t.technical) return;
+  const T = t.technical;
+  $("px").textContent = t.price ?? "—";
+  $("px-at").textContent = `${utcToLocal(t.generated_utc)} 時点`;
+  $("tech-empty").hidden = true; $("tech-body").hidden = false;
+  $("tech-at").textContent = utcToLocal(t.generated_utc) + " 計算";
+  const ov = T["総合"]; const cls = ov === "上昇寄り" ? "BUY" : ov === "下落寄り" ? "SELL" : "HOLD";
+  $("tech-overall").className = "verdict v-" + cls; $("tech-overall").textContent = ov;
+  const sc = Number(T["スコア"] || 0);
+  $("tech-score").textContent = `スコア ${sc > 0 ? "+" : ""}${sc}（4時間足を2倍で重み付け）`;
+  $("tech-mark").style.left = `${Math.min(100, Math.max(0, (sc + 6) / 12 * 100))}%`;
+  const tb = $("tf-body"); tb.replaceChildren();
+  for (const [k, v] of Object.entries(T["時間足"] || {})) {
+    const tr = el("tr"); tr.append(el("td", null, k), el("td", trendClass(v.trend), v.trend), el("td", "num", v.rsi), el("td", v.macd_hist === "プラス" ? "up" : "down", v.macd_hist)); tb.append(tr);
+  }
+  const rs = $("tech-reasons"); rs.replaceChildren(); for (const r of T["根拠"] || []) rs.append(el("li", null, r));
+  if (!rs.children.length) rs.append(el("li", null, "目立ったトレンドや過熱感はありません"));
+  const md = $("models"); md.replaceChildren();
+  for (const [label, m] of Object.entries(T["AIモデル"] || {})) {
+    const box = el("div", "model");
+    const p = Math.round(m["上昇確率"] * 100);
+    box.append(el("span", "lbl", label), el("span", "val " + (m["予想"] === "上昇" ? "up" : m["予想"] === "下落" ? "down" : "flat"), `${p}% ${m["予想"]}`),
+      el("span", "acc", `直近6週間の検証正解率 ${(m["直近検証の正解率"] * 100).toFixed(1)}%（${m["検証件数"]}件）`));
+    md.append(box);
+  }
+  const kv = $("tech-kv"); kv.replaceChildren();
+  const hl = (a) => Array.isArray(a) ? `${a[0]} / ${a[1]}` : a;
+  for (const [label, val] of [["24時間 高値/安値", hl(T["24時間 高値/安値"])], ["5日 高値/安値", hl(T["5日 高値/安値"])], ["ボリンジャー", `${T["ボリンジャー位置(σ)"]}σ（1時間足20本相当）`], ["4時間の値幅目安", `${T["4時間の平均変動幅"]} 円`]])
+    kv.append(el("dt", null, label), el("dd", null, String(val)));
+  const mc = $("macro"); mc.replaceChildren();
+  for (const [k, v] of Object.entries(t.macro || {})) { const d = el("div"); d.append(el("span", null, k), el("span", null, v)); mc.append(d); }
+  const S = t.system || {};
+  $("sys-data").textContent = `${S["データ取得"] || "-"}（最新足 ${utcToLocal(S["最新足_utc"])}、${S["データ件数"] ?? "-"}本）`;
+  const age = ageMin(t.generated_utc);
+  setDot("d-data", S["データ取得"] === "正常" && age != null && age < 240 ? "ok" : "warn");
+  if (age != null && age >= 240) $("sys-data").textContent += ` ・ 計算から${Math.round(age / 60)}時間経過`;
+  $("sys-journal").textContent = `${S["診断件数"] ?? 0}件${S["答え合わせ"] ? " ・ " + S["答え合わせ"] : ""}`;
+  $("sys-bt").textContent = S["長期検証"] || "—";
 }
 
-// ---- prompt for the cloud session
-function buildPrompt(pairs, h) {
-  return `これは Web ページ「AI FX 診断」からの自動実行です。利用者はこのセッションを見ていないので、質問や確認をせずに最後まで進めてください。
+// ---------- history
+function renderHistory(snap) {
+  const box = $("history");
+  if (snap.empty) { box.replaceChildren(el("p", "empty", "まだ履歴はありません。")); return; }
+  box.replaceChildren();
+  for (const d of snap.docs) {
+    const x = d.data(); let r; try { r = typeof x.result === "string" ? JSON.parse(x.result) : x.result; } catch { continue; }
+    const ai = r && (r.ai || (r.pairs && r.pairs[0] && { ...r.pairs[0], summary: r.summary, sources: r.sources, time_utc: r.time_utc, horizon_h: r.horizon_h }));
+    if (!ai) continue;
+    const v = String(ai.verdict || "").toUpperCase();
+    const row = el("button", "hrow"); row.type = "button";
+    row.append(el("span", "htime", utcToLocal(new Date(x.createdAt).toISOString().slice(0, 16).replace("T", " "))), el("span", "mini v-" + v, `${v} ${VJA[v] || ""}`), el("span", "htime", ai.price ? String(ai.price) : ""));
+    row.onclick = () => { renderAI(ai); if (r.technical) renderTech(r.technical); $("h-ai").scrollIntoView({ block: "start" }); };
+    box.append(row);
+  }
+}
+
+// ---------- request a new analysis
+function buildPrompt(h) {
+  return `これは Web ページ「AI FX 診断」からの自動実行です。利用者はこのセッションを見ていないので、質問や確認をせずに最後まで進めてください。対象は USD/JPY のみです。
 
 1. リポジトリのルートで \`pip install -q -r requirements.txt\` を実行する。
-2. \`.claude/skills/fx-diagnose/SKILL.md\` の手順に従い、次の通貨ペアを想定期間 ${h} 時間で診断する: ${pairs.join(", ")}
-3. 各ペアを \`python -m fxpred record\` で記録し、journal/diagnoses.csv をコミットして main に push する。Discord 通知は送れなければ飛ばしてよい。
-4. 最終回答の最後に、次の形の JSON を \`\`\`json コードブロックで1つだけ出力する (文字列はすべて日本語、各理由は1〜2文):
-{"time_utc":"YYYY-MM-DD HH:MM","horizon_h":${h},"summary":"全体の要約1〜2文","pairs":[{"pair":"USD/JPY","verdict":"BUY|SELL|HOLD","price":158.94,"confidence":"高|中|低","technical":"…","fundamental":"…","macro":"…","risk":"反対方向のリスク","levels":"支持線・抵抗線","events":"想定期間中の重要イベント"}],"sources":[{"title":"…","url":"https://…"}]}`;
+2. \`python -m fxpred snapshot\` を実行し、出力の JSON を控える (テクニカル予想とシステム状況)。
+3. \`.claude/skills/fx-diagnose/SKILL.md\` の手順で USD/JPY を想定期間 ${h} 時間で診断する (ニュース・経済指標・金利見通しを WebSearch で調べる)。
+4. \`python -m fxpred record USD/JPY <判定> "<理由>" ${h}\` で記録し、journal/diagnoses.csv をコミットして main に push する。Discord 通知は送れなければ飛ばしてよい。
+5. 最終回答の最後に、次の形の JSON を \`\`\`json コードブロックで1つだけ出力する (文字列は日本語、各理由は1〜2文。technical には手順2の JSON をそのまま入れる):
+{"ai":{"time_utc":"YYYY-MM-DD HH:MM","horizon_h":${h},"verdict":"BUY|SELL|HOLD","price":0,"confidence":"高|中|低","summary":"…","fundamental":"…","macro":"…","technical":"…","levels":"…","events":"…","risk":"…","sources":[{"title":"…","url":"https://…"}]},"technical":{…}}`;
 }
-
-// ---- status UI
 function showStatus(step, note) {
   $("status").hidden = false;
   ["s1", "s2", "s3"].forEach((id, i) => { $(id).className = i + 1 < step ? "done" : i + 1 === step ? "on" : ""; });
   if (note !== undefined) $("status-note").textContent = note;
 }
-function showError(msg) { $("status").hidden = false; $("status-err").hidden = false; $("status-err").textContent = msg; }
-function clearError() { $("status-err").hidden = true; }
-function setSessionLink(sid) {
-  $("session-link").hidden = !sid;
-  if (sid) $("session-a").href = "https://claude.ai/code/" + sid;
+function showError(msg, e) {
+  $("err").hidden = false; $("err").replaceChildren(document.createTextNode(msg));
+  if (e) $("err").append(el("br"), el("span", "code", `[${e.code || "?"}] ${String(e.message || "").slice(0, 240)}`));
 }
-function startClock(since) {
-  clearInterval(clockTimer);
-  const tick = () => { const s = Math.max(0, Math.floor((Date.now() - since) / 1000)); $("clock").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
-  tick(); clockTimer = setInterval(tick, 1000);
-}
-function busy(on) { $("go").disabled = on; $("go").textContent = on ? "診断中…" : "診断する"; }
-
+function busy(on) { $("go").disabled = on; $("go").textContent = on ? "分析中…" : "USD/JPY を分析する"; }
 function explain(e, action) {
-  const code = e && e.code;
-  if (code === "server_not_connected") return `${action}には Claude Code Remote のコネクタが必要です。claude.ai の設定 → コネクタで追加してください。`;
-  if (code === "needs_reauth") return `Claude Code Remote の接続が切れています。claude.ai の設定 → コネクタで再接続してください。`;
-  if (code === "not_in_manifest" || code === "approval_required" || code === "consent_required") return `${action}にはこのページへの許可が必要です。もう一度ボタンを押すと許可を求める画面が出ます。`;
-  if (code === "blocked_by_policy") return `組織の設定で、このページから Claude Code を使うことが許可されていません。`;
-  if (code === "tool_error") return `${action}に失敗しました: ${String(e.message || "").slice(0, 300)}`;
-  if (code === "server_unavailable" || code === "upstream_error") return `Claude Code に一時的につながりませんでした。少し待ってからもう一度お試しください。`;
-  return `${action}できませんでした (${code || "不明なエラー"})。`;
+  const c = e && e.code;
+  if (c === "server_not_connected") return `${action}には Claude Code Remote のコネクタが必要です。claude.ai の設定 → コネクタで追加してください。`;
+  if (c === "needs_reauth") return `Claude Code Remote の接続が切れています。claude.ai の設定 → コネクタで再接続してください。`;
+  if (c === "not_in_manifest" || c === "approval_required" || c === "consent_required") return `${action}には、このページで Claude Code を使う許可が必要です。もう一度押して、表示される画面で許可してください。`;
+  if (c === "blocked_by_policy") return `組織の設定で、このページから Claude Code を使うことが許可されていません。`;
+  if (c === "upstream_error" && e.retryable) return `許可の確認画面を表示できませんでした。少し待ってからもう一度押してください。`;
+  if (c === "tool_error") return `${action}に失敗しました。`;
+  if (c === "server_unavailable" || c === "upstream_error") return `Claude Code に一時的につながりませんでした。`;
+  return `${action}できませんでした。`;
 }
-
-// ---- start a diagnosis
-async function startDiagnosis() {
-  clearError();
-  if (!mcp) { showError("このページでは Claude Code に接続できません。claude.ai にログインしたブラウザか Claude アプリで開いてください。"); return; }
-  const pairs = PAIRS.filter(p => selected.has(p));
+async function startAnalysis() {
+  $("err").hidden = true;
+  if (!mcp) { showError("このページからは Claude Code を呼び出せません。claude.ai にログインしたブラウザで開いてください。"); return; }
   const h = Number($("horizon").value);
-  busy(true); setSessionLink(null); $("result").hidden = true;
+  busy(true); $("session-link").hidden = true;
   showStatus(1, "Claude Code のセッションを準備しています。");
-  const input = { prompt: buildPrompt(pairs, h), title: `FX診断 ${pairs.join(" ")}`, source_url: REPO, environment_id: ENV_ID, permission_mode: "auto" };
   let res;
-  try {
-    res = await mcp.callTool(CCR, "create_session", input, { cache: false });
-  } catch (e) {
-    if (e && e.code === "tool_error" && /permission/i.test(e.message || "")) {
-      try { delete input.permission_mode; res = await mcp.callTool(CCR, "create_session", input, { cache: false }); }
-      catch (e2) { busy(false); showError(explain(e2, "セッションの起動")); return; }
-    } else { busy(false); showError(explain(e, "セッションの起動")); return; }
-  }
+  try { res = await mcp.callTool(CCR, "create_session", { prompt: buildPrompt(h), title: "FX診断 USD/JPY", source_url: REPO, environment_id: ENV_ID }, { cache: false }); }
+  catch (e) { busy(false); $("status").hidden = true; showError(explain(e, "セッションの起動"), e); return; }
   const raw = JSON.stringify(res.payload ?? res.content ?? "");
   const m = raw.match(/session_[A-Za-z0-9]+/) || raw.match(/cse_([A-Za-z0-9]+)/);
   const sid = m ? (m[0].startsWith("cse_") ? "session_" + m[1] : m[0]) : null;
-  if (!sid) { busy(false); showError("セッションは起動しましたが、IDを読み取れませんでした。claude.ai/code のセッション一覧で結果をご確認ください。"); return; }
-  const job = { sid, pairs, h, startedAt: Date.now() };
-  store(false, job);
-  follow(job);
+  if (!sid) { busy(false); showError("セッションは起動しましたが、IDを読み取れませんでした。claude.ai/code のセッション一覧をご確認ください。", { code: "parse", message: raw.slice(0, 200) }); return; }
+  const job = { sid, h, startedAt: Date.now() }; store(false, job); follow(job);
 }
-
-// ---- follow a running session
 function follow(job) {
-  busy(true); setSessionLink(job.sid); startClock(job.startedAt);
-  showStatus(2, "Claude がチャートを分析し、ニュースと経済指標を調べています。画面を閉じても、次に開いたとき続きから表示します。");
-  clearTimeout(pollTimer);
+  busy(true);
+  $("session-link").hidden = false; $("session-a").href = "https://claude.ai/code/" + job.sid;
+  clearInterval(clockTimer);
+  const tick = () => { const s = Math.floor((Date.now() - job.startedAt) / 1000); $("clock").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+  tick(); clockTimer = setInterval(tick, 1000);
+  showStatus(2, "画面を閉じても、次に開いたとき続きから表示します。");
+  $("sys-req").textContent = "分析を実行中"; setDot("d-req", "warn");
   const poll = async () => {
-    if (Date.now() - job.startedAt > TIMEOUT_MS) { finish(); showError("25分たっても結果が届きませんでした。下のリンクからセッションを確認してください。"); return; }
+    if (Date.now() - job.startedAt > TIMEOUT_MS) { finish(); showError("25分たっても結果が届きませんでした。上のリンクからセッションを確認してください。"); return; }
     try {
       const st = await mcp.callTool(CCR, "get_session", { session_id: job.sid }, { cache: false });
       const bucket = (JSON.stringify(st.payload ?? "").match(/"status_bucket":"(\w+)"/) || [])[1];
-      if (bucket === "blocked") $("status-note").textContent = "セッションが許可を待っています。下のリンクからセッションを開き、承認してください。";
+      if (bucket === "blocked") $("status-note").textContent = "セッションが承認を待っています。上のリンクからセッションを開いて承認してください。";
       const ev = await mcp.callTool(CCR, "list_events", { session_id: job.sid, kinds: ["result"], limit: 100 }, { cache: false });
       const data = (ev.payload && ev.payload.ccr && ev.payload.ccr.data) || (ev.payload && ev.payload.data) || [];
       const results = data.map(d => d.result).filter(Boolean);
       const last = results[results.length - 1];
       if (last) {
-        const text = last.result || "";
-        const parsed = parseResult(text);
-        if (parsed) { await save(job, parsed); render(parsed, job); finish(); showStatus(4, ""); return; }
-        if (last.is_error || bucket === "failed") { finish(); showError("診断が途中で止まりました。下のリンクからセッションの内容を確認してください。"); return; }
-        if (bucket !== "working") { finish(); showError("結果の形式を読み取れませんでした。下のリンクからセッションの回答を確認してください。"); return; }
+        const parsed = parseResult(last.result || "");
+        if (parsed) { showStatus(3); await save(job, parsed); renderAI(parsed.ai); if (parsed.technical) renderTech(parsed.technical); finish(); showStatus(4, "完了しました。"); return; }
+        if (bucket !== "working") { finish(); showError("結果の形式を読み取れませんでした。上のリンクからセッションの回答を確認してください。"); return; }
       }
     } catch (e) {
-      if (!(e && e.retryable)) { finish(); showError(explain(e, "進行状況の確認")); return; }
+      if (!(e && e.retryable)) { finish(); showError(explain(e, "進行状況の確認"), e); return; }
     }
     pollTimer = setTimeout(poll, POLL_MS);
   };
   pollTimer = setTimeout(poll, 3000);
 }
-function finish() { clearTimeout(pollTimer); clearInterval(clockTimer); busy(false); store(false, null); }
-
+function finish() { clearTimeout(pollTimer); clearInterval(clockTimer); busy(false); store(false, null); refreshReqStatus(); }
 function parseResult(text) {
   const blocks = [...text.matchAll(/```json\s*([\s\S]*?)```/g)];
-  for (let i = blocks.length - 1; i >= 0; i--) {
-    try { const j = JSON.parse(blocks[i][1]); if (j && Array.isArray(j.pairs)) return j; } catch {}
-  }
+  for (let i = blocks.length - 1; i >= 0; i--) { try { const j = JSON.parse(blocks[i][1]); if (j && j.ai) return j; } catch {} }
   return null;
 }
-
-// ---- render a diagnosis
-function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
-const VERDICT_JA = { BUY: "買い", SELL: "売り", HOLD: "様子見" };
-function render(r, meta) {
-  $("result").hidden = false;
-  const when = r.time_utc ? `${r.time_utc} UTC` : "";
-  $("result-title").textContent = `診断結果 ${when} ・ 想定 ${r.horizon_h ?? meta?.h ?? "?"} 時間`;
-  $("result-summary").textContent = r.summary || "";
-  const box = $("tickets"); box.replaceChildren();
-  for (const p of r.pairs) {
-    const v = String(p.verdict || "HOLD").toUpperCase();
-    const t = el("article", "ticket");
-    const head = el("div", "ticket-head");
-    const left = el("div"); left.append(el("div", "pair", p.pair), el("div", "price", p.price != null ? `価格 ${p.price}　確信度 ${p.confidence || "-"}` : ""));
-    head.append(left, el("span", "verdict v-" + v, `${v} ${VERDICT_JA[v] || ""}`));
-    const body = el("div", "ticket-body");
-    const dl = el("dl");
-    for (const [k, label] of [["technical", "テクニカル"], ["fundamental", "ニュース・指標"], ["macro", "マクロ市場"], ["levels", "注目の価格"], ["events", "予定"], ["risk", "リスク"]]) {
-      if (p[k]) dl.append(el("dt", null, label), el("dd", null, p[k]));
-    }
-    body.append(dl); t.append(head, body); box.append(t);
-  }
-  const src = $("sources"); src.replaceChildren();
-  for (const s of r.sources || []) {
-    if (!/^https?:\/\//.test(s.url || "")) continue;
-    const li = el("li"); const a = el("a", null, s.title || s.url); a.href = s.url; a.target = "_blank"; a.rel = "noopener"; li.append(a); src.append(li);
-  }
-  src.parentElement.hidden = !src.children.length;
-  $("result").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
-}
-
-// ---- history (shared db)
 async function save(job, r) {
   if (!db) return;
-  try { await db.collection("diagnoses").doc(job.sid).set({ createdAt: new Date().toISOString(), pairs: job.pairs, horizon: job.h, result: JSON.stringify(r) }); } catch {}
-}
-function renderHistory(snap) {
-  const box = $("history");
-  if (snap.empty) { box.replaceChildren($("hist-empty") || el("p", "empty", "まだ診断はありません。")); return; }
-  box.replaceChildren();
-  for (const d of snap.docs) {
-    const x = d.data(); let r; try { r = JSON.parse(x.result); } catch { continue; }
-    const row = el("button", "hrow"); row.type = "button";
-    const dt = new Date(x.createdAt);
-    row.append(el("span", "htime", `${dt.getMonth() + 1}/${dt.getDate()} ${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`));
-    const vs = el("span", "hverd");
-    for (const p of r.pairs || []) { const v = String(p.verdict || "").toUpperCase(); vs.append(el("span", "mini v-" + v, `${p.pair} ${v}`)); }
-    row.append(vs, el("span", "htime", `${x.horizon ?? r.horizon_h}h`));
-    row.onclick = () => render(r, { h: x.horizon });
-    box.append(row);
-  }
+  const now = new Date().toISOString();
+  try { await db.doc("state/latest").set({ updatedAt: now, ai: r.ai, technical: r.technical || (latest && latest.technical) || null }); } catch {}
+  try { await db.collection("diagnoses").doc(job.sid).set({ createdAt: now, pairs: ["USD/JPY"], horizon: job.h, result: JSON.stringify(r) }); } catch {}
 }
 
-$("go").onclick = startDiagnosis;
+async function refreshReqStatus() {
+  if (!mcp) { $("sys-req").textContent = "このページからは利用不可（claude.ai にログインして開いてください）"; setDot("d-req", "bad"); return; }
+  try {
+    const lt = await mcp.listTools(CCR);
+    const s = (lt.servers || [])[0];
+    if (!s) { $("sys-req").textContent = "Claude Code Remote が未接続（設定 → コネクタで追加）"; setDot("d-req", "bad"); return; }
+    if (s.authStatus === "needs_reauth") { $("sys-req").textContent = "Claude Code Remote の再接続が必要"; setDot("d-req", "bad"); return; }
+    const names = (s.tools || []).map(t => t.name);
+    if (names.length && !names.includes("create_session")) { $("sys-req").textContent = "このアカウントではページからの起動が使えません（アプリから依頼してください）"; setDot("d-req", "warn"); return; }
+    $("sys-req").textContent = s.authStatus === "connected" ? "利用可能" : "利用可能（初回は許可の確認あり）"; setDot("d-req", "ok");
+  } catch (e) { $("sys-req").textContent = `確認できませんでした [${e.code || "?"}]`; setDot("d-req", "warn"); }
+}
 
-// ---- capabilities
+$("go").onclick = startAnalysis;
+
 (async () => {
   mcp = await claude.use("mcp");
-  if (!mcp) $("cap-note").textContent = "このページでは Claude Code に接続できません。claude.ai にログインしたブラウザか Claude アプリで開いてください。";
+  refreshReqStatus();
   const job = store(true);
-  if (mcp && job && job.sid && Date.now() - job.startedAt < TIMEOUT_MS) { PAIRS.forEach(p => selected.delete(p)); job.pairs.forEach(p => selected.add(p)); syncChips(); follow(job); }
+  if (mcp && job && job.sid && Date.now() - job.startedAt < TIMEOUT_MS) follow(job);
 })();
 (async () => {
   db = await claude.use("db");
-  if (!db) { $("hist-empty").textContent = "履歴を表示するには claude.ai にログインしてください。"; return; }
-  const t = setTimeout(() => { $("hist-empty").textContent = "履歴を読み込めませんでした。ページを開き直してください。"; }, 10000);
-  db.collection("diagnoses").orderBy("createdAt", "desc").limit(30).onSnapshot(s => { clearTimeout(t); renderHistory(s); }, () => { clearTimeout(t); $("hist-empty").textContent = "履歴を読み込めませんでした。"; });
+  if (!db) { $("sys-data").textContent = "表示には claude.ai へのログインが必要です"; $("sys-ai").textContent = "—"; setDot("d-data", "bad"); return; }
+  const t = setTimeout(() => { $("sys-data").textContent = "データを読み込めませんでした。ページを開き直してください。"; setDot("d-data", "bad"); }, 10000);
+  db.doc("state/latest").onSnapshot(s => {
+    clearTimeout(t);
+    latest = s.exists ? s.data() : null;
+    if (!latest) { $("sys-data").textContent = "まだデータがありません"; $("sys-ai").textContent = "まだ分析がありません"; setDot("d-data", "warn"); setDot("d-ai", "warn"); return; }
+    renderTech(latest.technical); renderAI(latest.ai);
+    if (!latest.ai) { $("sys-ai").textContent = "まだ分析がありません"; setDot("d-ai", "warn"); }
+  }, () => { clearTimeout(t); $("sys-data").textContent = "データを読み込めませんでした"; setDot("d-data", "bad"); });
+  db.collection("diagnoses").orderBy("createdAt", "desc").limit(30).onSnapshot(renderHistory, () => {});
 })();
 </script>

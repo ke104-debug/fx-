@@ -5,8 +5,7 @@ description: 利用者が「FX分析して」「ドル円どう？」「相場�
 
 # FX 相場診断
 
-引数で通貨ペアが指定されていればそれだけ (例: USD/JPY)、なければ7ペアすべてを診断する。
-対応ペア: USD/JPY, EUR/USD, GBP/USD, AUD/USD, NZD/USD, USD/CAD, USD/CHF
+現在の対象は **USD/JPY のみ** (利用者の指示)。ほかのペアは明示的に頼まれた時だけ診断する。
 
 ## 手順
 1. リポジトリのルートで診断材料を取得する:
@@ -28,7 +27,13 @@ description: 利用者が「FX分析して」「ドル円どう？」「相場�
    `python -m fxpred record USD/JPY HOLD "理由の要約" 4`
 6. Discord に送る (要点だけ): `discord-notify info "FX診断 <時刻>" "<ペア: 診断 - 理由の要約 を1行ずつ>"`
 7. 記録をコミットして push する (journal/diagnoses.csv)。
-8. 最後に必ず「AIの分析であり利益を保証しない。売買の最終判断はご自身で」と添える。
+8. Web ページ (https://claude.ai/artifact/Td8NvtQZftsB8fGzcoPE45) を更新する:
+   - `python -m fxpred snapshot` の出力を technical、診断結果を ai として
+     `{"updatedAt": ISO時刻, "ai": {time_utc, horizon_h, verdict, price, confidence, summary, fundamental, macro, technical, levels, events, risk, sources:[{title,url}]}, "technical": <snapshot>}` を JSON ファイルに書く
+   - ArtifactData (ToolSearch で読み込む) の set で collection `state` / doc_id `latest` に file_path で書き込む
+   - 同じ内容を collection `diagnoses` に doc_id `session_<セッションID>` (無ければ時刻) で `{createdAt, pairs:["USD/JPY"], horizon, result: <上のJSONの文字列>}` として書き込む
+   - ArtifactData が使えないセッション (Web ページから起動された時など) では、最終回答の json ブロックで返せばページ側が書き込む
+9. 最後に必ず「AIの分析であり利益を保証しない。売買の最終判断はご自身で」と添える。
 
 ## 答え合わせ
 利用者に精度を聞かれたら `python -m fxpred evaluate` を実行して、正解率と件数を正直に伝える。
