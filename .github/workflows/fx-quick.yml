@@ -1,0 +1,48 @@
+name: AI_FX 5分監視
+# 5分ごと: 1分足で急変を検知 (時間外でも通知)。下値・上値への接近などチャンスの候補があれば AI の詳しい分析を行い、
+# 信頼度が基準以上なら通知 (活動時間内)。普段は何も送らず数十秒で終わる。公開リポジトリのため無料。
+on:
+  schedule:
+    - cron: "*/5 * * * 0-5"   # GitHub の混雑で数分遅れたり、まれに飛ばされることがあります
+  workflow_dispatch: {}
+permissions:
+  contents: write
+concurrency: fx-shared
+jobs:
+  quick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt
+      - name: 毎時分析の状態 (下値・上値) を復元
+        uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: fx-auto-${{ github.run_id }}
+          restore-keys: fx-auto-
+      - name: 5分監視の状態を復元
+        uses: actions/cache/restore@v4
+        with:
+          path: state/quick.json
+          key: fx-quick-${{ github.run_id }}
+          restore-keys: fx-quick-
+      - run: python -m fxpred.quick
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: state/quick.json
+          key: fx-quick-${{ github.run_id }}
+      - name: シグナルの記録を保存 (変更があった時だけ)
+        run: |
+          git config user.name "ai-fx-bot"
+          git config user.email "ai-fx-bot@users.noreply.github.com"
+          git add journal
+          if ! git diff --cached --quiet; then
+            git commit -m "記録を更新 (5分監視) $(date -u +%Y-%m-%dT%H:%MZ)"
+            git pull --rebase -q && git push -q
+          fi

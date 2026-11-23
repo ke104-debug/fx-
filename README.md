@@ -116,3 +116,8 @@ H3+H4+H5 を同時に使い3%なら +71% (最大下落40%)。ロンドンレン�
 - 毎月最初の土曜10時: 同じ内容を1か月分で集計し、条件ごとの配点も見直す
 - 調整は件数が十分ある時だけ小さく: 週次は通知の基準点を±5 (8回以上、範囲45〜75%)、月次は条件の配点を±5 (20回以上)。履歴は `journal/learning.json`
 - 手動: `python -m fxpred auto --weekly` (月次も: `--weekly --monthly`)
+
+## 5分監視とデータ取得 (公開リポジトリのため GitHub Actions は無料)
+- `.github/workflows/fx-quick.yml`: 5分ごとに `python -m fxpred.quick`。急変は時間外でも通知、チャンスの候補は AI の詳しい分析を経て通知
+- `.github/workflows/duka-download.yml`: 手動実行。Dukascopy の1時間足を最大5時間かけて取得し `data-duka` ブランチに保存 (何度でも続きから)
+- 記録 (`journal/`) は git に、監視の状態 (`state/`) は Actions のキャッシュに保存

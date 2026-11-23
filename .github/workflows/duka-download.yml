@@ -1,0 +1,28 @@
+name: 20年データの取得 (手動)
+# Dukascopy の公開データ (USD/JPY 1時間足 2004〜2024) をゆっくり取得し、data-duka ブランチに保存する。
+# 接続制限があるため最大5時間かけて少しずつ。取得済みの月は飛ばすので、何回でも実行して続きから取れる。
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: write
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - name: 取得済みのデータ (data-duka ブランチ) を復元
+        run: |
+          git fetch -q origin data-duka && git show origin/data-duka --name-only >/dev/null 2>&1 && \
+            git archive origin/data-duka data | tar -x || echo "まだ取得済みデータなし"
+      - name: 取得 (最大5時間)
+        run: timeout 18000 python tools/duka_download.py 2004 2025 || true
+      - name: data-duka ブランチに保存
+        run: |
+          git config user.name "ai-fx-bot"
+          git config user.email "ai-fx-bot@users.noreply.github.com"
+          git checkout -q --orphan data-duka-tmp
+          git rm -rq --cached . && git add -f data/duka
+          git commit -qm "Dukascopy USD/JPY 1時間足 $(ls data/duka | wc -l) か月分"
+          git push -qf origin data-duka-tmp:data-duka
+          echo "$(ls data/duka | wc -l) files"
