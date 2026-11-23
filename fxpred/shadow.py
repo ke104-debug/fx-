@@ -12,12 +12,17 @@ CANDIDATES = {
     # 研究室 (reports/lab.md) で6期間すべてプラスだった設定のまとまりの中心
     "レンジ反発 (2日・3回反発・利確6割)": dict(fn=lab.range_bounce, params=dict(n=48, touches=3, osc_lv=30, need_osc=False,
                                                                         tgt_frac=0.6, stop_atr=0.45, trend_only=False)),
+    # 23年の研究 (reports/overnight.md) で7年代すべてプラスだった中心の作戦
+    "急変に付いていく (3.5倍・流れ方向・月金除外)": dict(fn=lab.shock_follow, params=dict(z_th=3.5)),
+    "急変に付いていく 損小利大 (4倍・損切1ATR/利確4ATR・流れ方向)": dict(fn=lab.shock_follow, params=dict(z_th=4, skip_mf=False, stop_atr=1.0, tgt_atr=4.0)),
 }
 
 
 def check(h: pd.DataFrame) -> list[dict]:
     """最新の確定足で影の作戦のシグナルが出ていれば記録する"""
     d = lab.prep(h.iloc[-900:])
+    if "trend_up" not in d:
+        d["trend_up"] = d.Close.ewm(span=480).mean().diff(24) > 0
     last = d.index[-2]   # range_bounce は次の足の始値で入るので、1本前の確定足までを判定対象にする
     found = []
     for name, c in CANDIDATES.items():

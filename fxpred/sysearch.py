@@ -71,6 +71,75 @@ def trend_breakout_retest(h, i, up):
     return None
 
 
+def range_breakout(d, n=48, touches=2, zone=0.15, adx_max=25):
+    """反省から: レンジ担当の「反発」は外れやすい → 何度も触れたレンジを終値で抜けたら、抜けた方向に入る。
+    損切りはレンジの中央、利確はレンジ幅の1倍先 (値幅の目標)"""
+    H, L, C, A = d.High.values, d.Low.values, d.Close.values, d.atr.values
+    adx = d.adx.values
+    out, last = [], -99
+    for i in range(max(500, n + 1), len(d) - 2):
+        if i - last < 12:
+            continue
+        lo_, hi_ = L[i - n:i].min(), H[i - n:i].max()
+        w = hi_ - lo_
+        if not (4 * A[i] <= w <= 15 * A[i]) or adx[i - 1] >= adx_max:
+            continue
+        for side, lvl in ((1, hi_), (-1, lo_)):
+            if not ((C[i] > lvl + 0.1 * A[i]) if side == 1 else (C[i] < lvl - 0.1 * A[i])):
+                continue
+            seg = H[i - n:i] if side == 1 else L[i - n:i]
+            hits = np.flatnonzero(seg >= lvl - zone * w) if side == 1 else np.flatnonzero(seg <= lvl + zone * w)
+            cnt = 1 + int((np.diff(hits) >= 6).sum()) if len(hits) else 0
+            if cnt < touches:
+                continue
+            mid = (lo_ + hi_) / 2
+            out.append((i, side, mid, C[i] + side * w)); last = i
+            break
+    return out
+
+
+def structure_break(h):
+    """反省から: トレンド担当の「転換警戒」は53%で安定 → 上昇トレンド (50/200本平均) 中に直近72本の押し安値を
+    終値で割ったら売り (下降は逆)。損切りは直近24本の高値の外、利確は損切り幅の2倍"""
+    c = h.Close.values; H, L, A = h.High.values, h.Low.values, h.atr.values
+    up = (h.Close.ewm(span=50).mean() > h.Close.ewm(span=200).mean()).values
+    out, last = [], -99
+    for i in range(300, len(h) - 2):
+        if i - last < 24:
+            continue
+        w_lo = L[i - 72:i - 5]; w_hi = H[i - 72:i - 5]
+        swing_lo = w_lo.min(); swing_hi = w_hi.max()
+        if up[i] and c[i] < swing_lo and c[i - 1] >= swing_lo:
+            stop = H[i - 24:i + 1].max() + 0.2 * A[i]
+            out.append((i, -1, stop, c[i] - 2 * (stop - c[i]))); last = i
+        elif (not up[i]) and c[i] > swing_hi and c[i - 1] <= swing_hi:
+            stop = L[i - 24:i + 1].min() - 0.2 * A[i]
+            out.append((i, 1, stop, c[i] + 2 * (c[i] - stop))); last = i
+    return out
+
+
+def shock_follow(h):
+    """反省から: 急変の後は戻るより続く方がやや多い (53%) → 急変 (普段の4倍以上 or 24時間で2円) を検知した足の次で同じ向きに入る。
+    損切りは1.5ATR、利確は損切り幅の2倍。1日1回まで"""
+    r = h.Close.diff().values
+    sd = pd.Series(r).rolling(480).std().values
+    c, A = h.Close.values, h.atr.values
+    out, last_day = [], None
+    for i in range(500, len(h) - 2):
+        m1, m3 = r[i], c[i] - c[i - 3]
+        m24 = c[i] - c[i - 24]
+        z = max(abs(m1) / sd[i], abs(m3) / (sd[i] * np.sqrt(3)), abs(m24) / (sd[i] * np.sqrt(24)))
+        if not (z >= 4 or abs(m24) >= 2.0):
+            continue
+        day = h.index[i].date()
+        if day == last_day:
+            continue
+        side = 1 if (m3 if abs(m3) > 0 else m24) > 0 else -1
+        stop = c[i] - side * 1.5 * A[i]
+        out.append((i, side, stop, c[i] + side * 3 * A[i])); last_day = day
+    return out
+
+
 def signals(h: pd.DataFrame) -> pd.DataFrame:
     """全作戦のシグナルと、その結果 (入り・決済の時刻と価格)、フィルター用の情報"""
     t0 = time.time()
@@ -109,6 +178,13 @@ def signals(h: pd.DataFrame) -> pd.DataFrame:
         for (i, side, stop, tgt) in range_levels(d, **params):
             add(i, name, side, stop, tgt, 48, aligned=(side == 1) == bool(up[i]))
     print(f"  レンジ反発: 合計{len(raw)}件 ({time.time() - t0:.0f}秒)", flush=True)
+    for (i, side, stop, tgt) in range_breakout(d):
+        add(i, "RBO", side, stop, tgt, 48, aligned=(side == 1) == bool(up[i]))
+    for (i, side, stop, tgt) in structure_break(h):
+        add(i, "REV", side, stop, tgt, 48, aligned=(side == 1) == bool(up[i]))
+    for (i, side, stop, tgt) in shock_follow(h):
+        add(i, "SF", side, stop, tgt, 24, aligned=(side == 1) == bool(up[i]))
+    print(f"  反省からの新しい作戦: 合計{len(raw)}件 ({time.time() - t0:.0f}秒)", flush=True)
     for side in (1, -1):
         t = sh.find(h, side=side)
         for r in t.itertuples():
@@ -201,15 +277,16 @@ def simulate(a: pd.DataFrame, risk: float, daily_stop: int | None, window=(10, 2
 
 
 FILTERS = {
-    "流れの方向だけ (レンジ逆張り・急変)": lambda a: a.aligned | ~a.key.isin(["H4", "S", "RB"]),
+    "流れの方向だけ (レンジ逆張り・急変)": lambda a: a.aligned | ~a.key.isin(["H4", "S", "RB", "RBO", "SF"]),
     "20日平均+MACDが一致": lambda a: a.trend_macd,
     "指標の2時間前は入らない": lambda a: a.h_to_event >= 2,
     "月曜・金曜は入らない": lambda a: ~a.weekday.isin([0, 4]),
     "値動きが小さすぎる時は入らない": lambda a: a.atr_ratio >= 0.7,
 }
-STRATS = ["H3", "H4", "H5", "S", "RB", "RB2", "TB"]
+STRATS = ["H3", "H4", "H5", "S", "RB", "RB2", "TB", "RBO", "REV", "SF"]
 STRAT_JA = {"H3": "東京レンジのロンドン抜け", "H4": "レンジ逆張り(従来)", "H5": "指標直後の順張り", "S": "急変の反動",
-            "RB": "レンジ反発(2日・3回)", "RB2": "レンジ反発(3日・2回・流れ方向)", "TB": "トレンドのブレイク後の押し"}
+            "RB": "レンジ反発(2日・3回)", "RB2": "レンジ反発(3日・2回・流れ方向)", "TB": "トレンドのブレイク後の押し",
+            "RBO": "レンジのブレイクに付いていく", "REV": "流れの転換サイン", "SF": "急変に付いていく"}
 
 
 def _eval(args):
@@ -256,4 +333,87 @@ def search(a: pd.DataFrame, workers=4) -> pd.DataFrame:
             rows += r
             if i % 8 == 0:
                 print(f"  探索 {len(rows)}/{len(combos)} ({time.time() - t0:.0f}秒)", flush=True)
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------- 高速版 (numba)
+import numba
+
+
+@numba.njit(cache=True)
+def _kernel(t_in, t_out, day, R, cap, idx, risk, dstop):
+    eq = 1.0; peak = 1.0; mdd = 0.0; busy = -1; n = 0; wins = 0
+    cur_day = -1; losses = 0
+    for q in range(len(idx)):
+        k = idx[q]
+        if t_in[k] < busy:
+            continue
+        if day[k] != cur_day:
+            cur_day = day[k]; losses = 0
+        if dstop > 0 and losses >= dstop:
+            continue
+        f = risk if risk < cap[k] else cap[k]
+        eq *= 1.0 + f * R[k]
+        n += 1
+        if R[k] > 0:
+            wins += 1
+        else:
+            losses += 1
+        if eq > peak:
+            peak = eq
+        dd = 1.0 - eq / peak
+        if dd > mdd:
+            mdd = dd
+        busy = t_out[k]
+        if eq <= 0.05:
+            break
+    return eq, mdd, n, wins
+
+
+def fast_search(a: pd.DataFrame, risks=(0.01, 0.02, 0.03, 0.05), dstops=(0, 2), max_strats=4, max_filters=2) -> pd.DataFrame:
+    a = a.sort_values("time").reset_index(drop=True)
+    t_in = (a.time.astype("int64") // 10**9).values + 3600          # 入るのは次の足
+    t_out = (a.exit_time.astype("int64") // 10**9).values
+    day = ((a.time + pd.Timedelta(hours=-1)).dt.floor("D").astype("int64") // 86400 // 10**9).values   # 運用日 (日本時間10時区切り)
+    R = a.R.values.astype(float)
+    cap = (25 * a.risk_pips / 100 / a.entry).values.astype(float)
+    hr = a.jst_hour.values
+    window = (hr >= 10) | (hr < 1)                                    # 新規は日本時間10時〜翌1時
+    era = a.era.astype(str).values
+    fm = {k: f(a).values for k, f in FILTERS.items()}
+    km = {s: (a.key == s).values for s in STRATS}
+    eras = [e[0] for e in ERAS]
+    em = {e: era == e for e in eras}
+    rows = []
+    t0 = time.time()
+    strat_sets = [c for n in range(1, max_strats + 1) for c in itertools.combinations(STRATS, n)]
+    filt_sets = [c for n in range(0, max_filters + 1) for c in itertools.combinations(list(FILTERS), n)]
+    for si, strats in enumerate(strat_sets):
+        base = np.zeros(len(a), bool)
+        for s in strats:
+            base |= km[s]
+        base &= window
+        for filt in filt_sets:
+            m = base.copy()
+            for f in filt:
+                m &= fm[f]
+            era_idx = {e: np.flatnonzero(m & em[e]) for e in eras}
+            full_idx = np.flatnonzero(m)
+            if len(full_idx) < 40:
+                continue
+            for risk in risks:
+                for ds in dstops:
+                    row = {"作戦": "+".join(strats), "フィルター": " / ".join(filt) or "なし", "リスク": risk, "1日の損失停止": ds or "なし"}
+                    mults, dds = [], []
+                    for e in eras:
+                        mult, mdd, n, w = _kernel(t_in, t_out, day, R, cap, era_idx[e], risk, ds)
+                        row[e] = round(mult, 2); mults.append(mult); dds.append(mdd)
+                    full, fdd, n, w = _kernel(t_in, t_out, day, R, cap, full_idx, risk, ds)
+                    row.update({"最悪の年代の倍率": round(min(mults), 2), "2倍以上の年代": sum(x >= 2 for x in mults),
+                                "プラスの年代": sum(x > 1 for x in mults), "最大下落(年代の最悪)": round(max(dds), 2),
+                                "23年通しの倍率": round(full, 2), "23年の年率": round(full ** (1 / 22.9) - 1, 3) if full > 0 else -1,
+                                "23年の最大下落": round(fdd, 2), "取引回数": n, "勝率": round(w / n, 2) if n else 0})
+                    rows.append(row)
+        if si % 40 == 0:
+            print(f"  {si}/{len(strat_sets)} 作戦の組み合わせ ({len(rows)}システム, {time.time() - t0:.0f}秒)", flush=True)
     return pd.DataFrame(rows)

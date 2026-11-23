@@ -170,3 +170,37 @@ def run(h: pd.DataFrame | None = None) -> str:
 
 if __name__ == "__main__":
     print(run())
+
+
+def shock_follow(d, z_th=3.5, yen=2.0, stop_atr=1.5, tgt_atr=3.0, hold=24, aligned=True, skip_mf=True, window=True):
+    """23年の研究で全年代プラスだった「急変に付いていく」(reports/overnight.md)。
+    1時間・3時間・24時間の動きが普段の z_th 倍以上 (または24時間で yen 円以上) なら、その向きに次の足で入る。
+    大きな流れ (20日平均の向き) と同じ向きだけ、月曜・金曜 (日本時間) と運用時間外 (10時〜翌1時以外) は入らない。1日1回まで"""
+    from . import research as rs_
+    r = d.Close.diff().values
+    sd = pd.Series(r).rolling(480).std().values
+    c, A = d.Close.values, d.atr.values
+    up = d.trend_up.values if "trend_up" in d else d.up20d.values
+    jst = d.index + pd.Timedelta(hours=10)
+    hour, wd = jst.hour.values, jst.weekday.values
+    out, last_day = [], None
+    for i in range(500, len(d) - 2):
+        m1, m3, m24 = r[i], c[i] - c[i - 3], c[i] - c[i - 24]
+        z = max(abs(m1) / sd[i], abs(m3) / (sd[i] * np.sqrt(3)), abs(m24) / (sd[i] * np.sqrt(24)))
+        if not (z >= z_th or abs(m24) >= yen):
+            continue
+        if window and not (hour[i] >= 10 or hour[i] < 1):
+            continue
+        if skip_mf and wd[i] in (0, 4):
+            continue
+        day = d.index[i].date()
+        if day == last_day:
+            continue
+        side = 1 if (m3 if m3 != 0 else m24) > 0 else -1
+        if aligned and (side == 1) != bool(up[i]):
+            continue
+        stop = c[i] - side * stop_atr * A[i]
+        pips, _, _ = rs_.outcome(d, i + 1, side, stop, c[i] + side * tgt_atr * A[i], hold)
+        out.append((d.index[i], side, pips, abs(d.Open.iat[i + 1] - stop) * 100))
+        last_day = day
+    return pd.DataFrame(out, columns=["time", "side", "pips", "risk"])
