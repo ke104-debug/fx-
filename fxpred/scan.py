@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
-from . import notify
+from . import edge, notify
 from . import portfolio as pf
 from . import regime as rg
 
@@ -61,6 +61,26 @@ def load_recent() -> pd.DataFrame:
     return d[d.index + pd.Timedelta(hours=1) <= now]  # 確定した足だけ
 
 
+def context(h: pd.DataFrame) -> dict:
+    """通知に使う判断材料: 時間足の方向、AIモデルの上昇確率 (4時間後)、VIX の4時間変化"""
+    from . import diagnose, model, features as ft
+    raw = h[["Open", "High", "Low", "Close"]]
+    tech = diagnose.technical(raw)
+    tf = {k: tech[k]["trend"] for k in ("15分足", "1時間足", "4時間足")}
+    try:
+        f = ft.build(raw, "USDJPY=X", np.log(raw.Close).diff(), horizon=4)
+        m = model.train(f)
+        p_up = float(model.predict_proba(m, f.tail(1)).iloc[0])
+    except Exception:
+        p_up = 0.5
+    try:
+        v = yf.download("^VIX", period="5d", interval="1h", progress=False)["Close"].squeeze().dropna()
+        vix_chg = float(v.iat[-1] - v.iat[-5])
+    except Exception:
+        vix_chg = None
+    return {"tf": tf, "p_up": p_up, "vix_chg": vix_chg, "tech": tech}
+
+
 def shock_signal(h: pd.DataFrame, drop=2.0, lookback=24, wait=12, retrace=0.4, buffer=0.2):
     """最新の確定足が「急変後の下げ止まり (上げ止まり)」の初回なら、次の足で入るシグナルを返す"""
     n = len(h) - 1
@@ -96,6 +116,16 @@ def shock_alert(h: pd.DataFrame, drop=2.0):
     return None
 
 
+def near_level(h: pd.DataFrame, side: int) -> str | None:
+    """買いなら直近の安値 (下値)、売りなら直近の高値 (上値) の近く (0.25円以内) にいるか"""
+    c = h.Close.iat[-1]
+    for hours, name in ((24, "24時間"), (120, "5日")):
+        lv = h.Low.iloc[-hours:].min() if side == 1 else h.High.iloc[-hours:].max()
+        if abs(c - lv) <= 0.25:
+            return f"{name}の{'安値' if side == 1 else '高値'} {lv:.2f} の近く"
+    return None
+
+
 def size(entry, stop, risk):
     loss_yen = CAPITAL * risk
     units = min(loss_yen / abs(entry - stop), pf.MAX_LEV * CAPITAL / entry)
@@ -115,11 +145,15 @@ def run(dry=False):
                      f"USD/JPY {h.Close.iat[n]:.2f}。使う作戦: " + ", ".join(LABEL[s] for (s, r) in RULES if r == state_now)))
         st["regime"] = state_now
     # 急変の予告
-    al = shock_alert(h)
-    if al and st.get("alert_day") != f"{t:%Y-%m-%d}":
-        msgs.append(("wait", "急変を検知 (まだ入らない)", al + "。下げ止まり (上げ止まり) を確認したら売買シグナルを送ります。原因の確認をおすすめします。"))
-        st["alert_day"] = f"{t:%Y-%m-%d}"
+    anom = edge.anomaly(h)
+    if anom.get("level") and st.get("alert_key") != f"{anom['level']}-{t:%Y-%m-%d}" and (anom["level"] == "急変" or awake(pd.Timestamp.now(tz="UTC"))):
+        msgs.append(("wait", f"{'急騰' if anom['move'] > 0 else '急落'}を検知 ({anom['level']})",
+                     f"USD/JPY {h.Close.iat[n]:.2f}円。{anom['text']}。\n"
+                     "まだ入らないでください。原因 (介入・指標・要人発言・リスク回避) の確認をおすすめします。\n"
+                     "流れの方向へ戻る下げ止まり (上げ止まり) を確認したら、反動狙いのシグナルを送ります。"))
+        st["alert_key"] = f"{anom['level']}-{t:%Y-%m-%d}"
     # 売買シグナル
+    is_awake = awake(pd.Timestamp.now(tz="UTC"), rg.st.events(h.index[-200:]))
     sigs = []
     if ("S", state_now) in RULES:
         s = shock_signal(h)
@@ -132,6 +166,8 @@ def run(dry=False):
             side, stop, tgt, trail = r
             sigs.append((key, dict(side=side, entry=h.Close.iat[n], stop=stop, target=tgt, note=EXIT_TEXT.get(trail, "損切りか利確まで保有"))))
     is_awake = awake(pd.Timestamp.now(tz="UTC"), rg.st.events(h.index[-200:]))
+    ctx = context(h) if (sigs or anom.get("level")) else None
+    now = pd.Timestamp.now(tz="UTC")
     for key, s in sigs:
         sig_id = f"{key}-{t:%Y%m%d%H}"
         if sig_id in st.get("sent", []):
@@ -140,15 +176,26 @@ def run(dry=False):
             print(f"(時間外のため送らない) {LABEL[key]}")
             st.setdefault("sent", []).append(sig_id)
             continue
-        risk = RULES[(key, state_now)]
-        units, loss = size(s["entry"], s["stop"], risk)
+        level = near_level(h, s["side"])
+        n_ok, ok, ng = edge.confluence(s["side"], ctx["tf"], level, ctx["p_up"], ctx["vix_chg"], state_now, True)
+        stop_why = edge.no_trade(h, now, state_now, ctx["tf"], anom) if key not in URGENT else []
+        serious = [w for w in stop_why if w.startswith(("重要指標", "急変の最中", "週末"))]
+        conf = "高" if n_ok >= 5 else "中" if n_ok == 4 else "低"
+        verdict = "ノートレード推奨" if serious else f"{'買い' if s['side'] == 1 else '売り'}"
         tgt = f"{s['target']:.2f}" if s.get("target") else "なし (追いかけ決済)"
-        body = (f"**{'買い' if s['side'] == 1 else '売り'}** USD/JPY 目安 {s['entry']:.2f}\n"
-                f"損切り {s['stop']:.2f} / 利確 {tgt}\n"
-                f"数量の目安: {units:,.0f}ドル (資金{CAPITAL / 1e4:.0f}万円・損切り時の損失 約{loss / 1e4:.1f}万円 = {risk:.1%})\n"
-                f"相場状態: {state_now} / {s['note']}\n"
+        price = h.Close.iat[n]
+        body = (f"【現在の相場】{price:.2f}円 / 24時間 {h.Low.iloc[-24:].min():.2f}〜{h.High.iloc[-24:].max():.2f} / 状態: {state_now}\n\n"
+                f"【判定】{verdict}" + (f" ({'・'.join(serious)})" if serious else "") + "\n"
+                f"【信頼度】{conf} (条件 {n_ok}/{n_ok + len(ng)} 一致)\n\n"
+                f"【判断の理由】\n" + "\n".join("・" + x for x in ok) + "\n"
+                f"【そろっていない条件】\n" + ("\n".join("・" + x for x in ng) or "・なし") + "\n\n"
+                f"【売買戦略】{LABEL[key]}\n"
+                f"{'買い' if s['side'] == 1 else '売り'} 目安 {s['entry']:.2f} / 損切り {s['stop']:.2f} / 利確 {tgt}\n"
+                f"{s['note']}\n\n"
+                f"【警戒事項】\n" + ("\n".join("・" + x for x in stop_why) or "・特になし") + "\n\n"
                 f"足 {t.tz_convert(JST):%m/%d %H:%M} 確定時点。※過去検証の作戦であり利益を保証しません")
-        msgs.append(("ready", f"売買シグナル: {LABEL[key]}", body))
+        title = ("ノートレード推奨: " if serious else "高確度シグナル: " if conf == "高" else "売買シグナル: ") + LABEL[key]
+        msgs.append(("wait" if serious else "ready", title, body))
         st.setdefault("sent", []).append(sig_id)
         st["sent"] = st["sent"][-200:]
     st["last_run"] = datetime.now(timezone.utc).isoformat(timespec="minutes")
