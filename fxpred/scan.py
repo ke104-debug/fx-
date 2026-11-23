@@ -31,6 +31,11 @@ CONFIG = os.path.join(os.path.dirname(__file__), "..", "config", "notify.json")
 URGENT = {"S"}   # 時間外でも送る作戦 (急変の反動)
 
 
+def filters() -> dict:
+    path = os.path.join(os.path.dirname(__file__), "..", "config", "filters.json")
+    return json.load(open(path)) if os.path.exists(path) else {}
+
+
 def awake(now_utc: pd.Timestamp, events=None) -> bool:
     """利用者が起きている時間か (config/notify.json)。指標発表の前後と、日付ごとの追加時間も含める"""
     cfg = json.load(open(CONFIG)) if os.path.exists(CONFIG) else {"start": "10:00", "end": "25:00"}
@@ -243,7 +248,12 @@ def run(dry=False):
         level = near_level(h, s["side"])
         n_ok, ok, ng = edge.confluence(s["side"], ctx["tf"], level, ctx["p_up"], ctx["vix_chg"], state_now, True)
         stop_why = edge.no_trade(h, now, state_now, ctx["tf"], anom) if key not in URGENT else []
-        serious = [w for w in stop_why if w.startswith(("重要指標", "急変の最中", "週末"))]
+        flt = filters()
+        serious = [w for w in stop_why if w.startswith(("重要指標", "急変の最中", "週末"))] if flt.get("ノートレード判定", True) else []
+        if not flt.get("警戒事項の減点", True):
+            stop_why_pen = []
+        else:
+            stop_why_pen = stop_why
         views = {"急変担当": sp.shock_view(h, anom, sp.headlines(hours=12)), "レンジ担当": sp.range_view(h, h.rsi.iat[n]),
                  "トレンド担当": sp.trend_view(h)}
         from .dailyplan import load_learning
@@ -252,8 +262,7 @@ def run(dry=False):
         lead = coord["lead"]
         agree = 1 if coord["verdict"] == ("買い寄り" if s["side"] == 1 else "売り寄り") else \
             -1 if coord["verdict"] == ("売り寄り" if s["side"] == 1 else "買い寄り") else 0
-        score = edge.confidence(ok, agree, len(stop_why), learn.get("cond_weights"))
-        conf = f"{score}" 
+        score = edge.confidence(ok, agree, len(stop_why_pen), learn.get("cond_weights"))
         verdict = "ノートレード推奨" if serious else f"{'買い' if s['side'] == 1 else '売り'}"
         # 理由: そろった条件を、利用者に意味のある言葉に (作戦名は出さない)
         reasons = [x for x in ok if not x.startswith(("作戦シグナル", "相場状態"))]

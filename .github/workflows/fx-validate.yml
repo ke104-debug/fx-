@@ -12,7 +12,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 340
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -49,5 +49,13 @@ jobs:
           git config user.name "ai-fx-bot"
           git config user.email "ai-fx-bot@users.noreply.github.com"
           git add reports && git commit -qm "20年検証レポートを更新" && git pull --rebase -q && git push -q
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      - name: 精度向上の研究 (感度・ウォークフォワード・年代別・モンテカルロ・コスト・足の中の順番・フィルターの切り分け)
+        if: steps.judge.outputs.next == 'validate'
+        run: |
+          python -m fxpred.research --apply > research.txt
+          python -c "from fxpred import notify; t=open('research.txt').read(); notify.send('🔬 精度向上の研究の結果', t[-3500:] + '\n詳細: reports/research.md', color=3447003)"
+          git add reports config && (git diff --cached --quiet || git commit -qm "研究レポートを更新 (効果が確かめられたフィルター変更を反映)") && git pull --rebase -q && git push -q
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}

@@ -1,0 +1,29 @@
+name: 精度向上の研究 (手動)
+# 20年データ (data-duka ブランチ) で研究を実行する。データ取得の途中でも手動で実行できる (その場合は結果を反映しない)
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "効果が確かめられたフィルター変更を運用に反映する"
+        type: boolean
+        default: false
+permissions:
+  contents: write
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt
+      - run: git fetch -q origin data-duka && git archive origin/data-duka data | tar -x
+      - name: 研究
+        run: |
+          python -m fxpred.research ${{ inputs.apply && '--apply' || '' }} > research.txt
+          python -c "from fxpred import notify; t=open('research.txt').read(); notify.send('🔬 精度向上の研究の結果', t[-3500:] + '\\n詳細: reports/research.md', color=3447003)"
+          git config user.name "ai-fx-bot"; git config user.email "ai-fx-bot@users.noreply.github.com"
+          git add reports config && (git diff --cached --quiet || git commit -qm "研究レポートを更新") && git pull --rebase -q && git push -q
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
