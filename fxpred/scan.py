@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
-from . import edge, notify, specialists as sp
+from . import edge, fmt, notify, specialists as sp
 from . import portfolio as pf
 from . import regime as rg
 
@@ -23,6 +23,7 @@ JST = "Asia/Tokyo"
 RULES = {("S", "荒れ"): 0.04, ("H4", "通常"): 0.015, ("H5", "通常"): 0.01, ("H3", "通常"): 0.01, ("H3", "トレンド"): 0.015}
 LABEL = {"S": "急変の反動 (流れの方向)", "H3": "東京レンジのロンドン抜け", "H4": "レンジ逆張り (流れの方向)", "H5": "指標発表直後の順張り"}
 EXIT_TEXT = {"eod": "届かなければ当日 日本時間朝5時に手仕舞い", "24h": "届かなければ24時間後に手仕舞い", None: "損切りか利確まで保有 (最長48時間)"}
+EXIT_VALID = {"H3": "当日 朝5時まで", "H4": "最長48時間", "H5": "24時間", "S": "最長72時間"}
 RULE_FN = {"H3": pf.h_tokyo_break, "H4": pf.h_range_trend, "H5": pf.h_event_momo}
 
 
@@ -150,13 +151,15 @@ def run(dry=False):
     msgs = []
     # 相場状態の変化
     if st.get("regime") != state_now and (state_now == "荒れ" or awake(pd.Timestamp.now(tz="UTC"))):
+        MEAN = {"通常": "レンジになりやすい。下値・上値の近くを待つ", "トレンド": "一方向に動きやすい。押し目・戻りを待つ",
+                "荒れ": "急な動き。下げ止まり・上げ止まりを確認してから"}
         msgs.append(("info", f"相場の状態: {st.get('regime', '-')} → {state_now}",
-                     f"USD/JPY {h.Close.iat[n]:.2f}。使う作戦: " + ", ".join(LABEL[s] for (s, r) in RULES if r == state_now)))
+                     f"USD/JPY {h.Close.iat[n]:.2f}　{MEAN[state_now]}"))
         st["regime"] = state_now
     # 急変の予告
     anom = edge.anomaly(h)
     if anom.get("level") and st.get("alert_key") != f"{anom['level']}-{t:%Y-%m-%d}" and (anom["level"] == "急変" or awake(pd.Timestamp.now(tz="UTC"))):
-        msgs.append(("wait", f"{'急騰' if anom['move'] > 0 else '急落'}を検知 ({anom['level']})",
+        msgs.append(("wait", f"⚠️ {'急騰' if anom['move'] > 0 else '急落'} USD/JPY {h.Close.iat[n]:.2f} ({anom['level']})",
                      f"USD/JPY {h.Close.iat[n]:.2f}円。{anom['text']}。\n\n【急変担当の見立て】\n" +
                      "\n".join("・" + x for x in sp.shock_view(h, anom, sp.headlines(hours=6))["lines"]) + "\n\n"
                      "まだ入らないでください。原因 (介入・指標・要人発言・リスク回避) の確認をおすすめします。\n"
@@ -201,26 +204,23 @@ def run(dry=False):
         score = edge.confidence(ok, agree, len(stop_why), learn.get("cond_weights"))
         conf = f"{score}" 
         verdict = "ノートレード推奨" if serious else f"{'買い' if s['side'] == 1 else '売り'}"
-        tgt = f"{s['target']:.2f}" if s.get("target") else "なし (追いかけ決済)"
-        price = h.Close.iat[n]
-        body = (f"【現在の相場】{price:.2f}円 / 24時間 {h.Low.iloc[-24:].min():.2f}〜{h.High.iloc[-24:].max():.2f} / 状態: {state_now}\n\n"
-                f"【判定】{verdict}" + (f" ({'・'.join(serious)})" if serious else "") + "\n"
-                f"【信頼度】{score} / 100 (条件 {n_ok}/{n_ok + len(ng)} 一致、まとめ役 {coord['verdict']}、警戒事項 {len(stop_why)}件。{edge.SEND_AT}以上で通知、{edge.HIGH_AT}以上は高確度)\n\n"
-                f"【判断の理由】\n" + "\n".join("・" + x for x in ok) + "\n"
-                f"【そろっていない条件】\n" + ("\n".join("・" + x for x in ng) or "・なし") + "\n\n"
-                f"【売買戦略】{LABEL[key]}\n"
-                f"{'買い' if s['side'] == 1 else '売り'} 目安 {s['entry']:.2f} / 損切り {s['stop']:.2f} / 利確 {tgt}\n"
-                f"{s['note']}\n\n"
-                f"【警戒事項】\n" + ("\n".join("・" + x for x in stop_why) or "・特になし") + "\n\n"
-                f"足 {t.tz_convert(JST):%m/%d %H:%M} 確定時点。※過去検証の作戦であり利益を保証しません")
-        body = body.replace("【売買戦略】", f"【担当AIの見立て】主担当: {lead} / まとめ役: {coord['verdict']}\n" +
-                            "\n".join("・" + x for x in views[lead]["lines"]) + "\n\n【売買戦略】")
+        # 理由: そろった条件を、利用者に意味のある言葉に (作戦名は出さない)
+        reasons = [x for x in ok if not x.startswith(("作戦シグナル", "相場状態"))]
+        reasons = [x.replace("AIモデル (", "AIモデル (").split("、ただし")[0].rstrip(")") + (")" if "(" in x else "") for x in reasons]
+        if any(x.startswith("作戦シグナル") for x in ok):
+            reasons.append("過去の検証で成績の良かった値動きのパターンが発生")
+        lv = views[lead]["lines"][0] if lead == "レンジ担当" else None
+        if lv: reasons.append(lv.split(" / レンジ内")[0])
+        cautions = [x for x in ng if not x.startswith("作戦シグナル")] + stop_why
+        exit_h = {"eod": "本日 朝5時まで", "24h": "24時間", None: "48時間"}
+        valid = EXIT_VALID.get(key, "48時間")
+        title, body = fmt.signal(s["side"], s["entry"], s["stop"], s.get("target"), score, reasons, cautions,
+                                 f"{t.tz_convert(JST):%m/%d %H:%M} から{valid}", serious)
         log_signal(t, key, s, score, verdict)
         if (score < edge.SEND_AT or agree < 0) and key not in URGENT:
             print(f"(チャンスと判断しないため送らない: 信頼度{score}{'、担当AIと逆向き' if agree < 0 else ''}) {LABEL[key]}")
             st.setdefault("sent", []).append(sig_id)
             continue
-        title = ("ノートレード推奨: " if serious else "高確度シグナル: " if score >= edge.HIGH_AT else "売買シグナル: ") + LABEL[key]
         msgs.append(("wait" if serious else "ready", title, body))
         st.setdefault("sent", []).append(sig_id)
         st["sent"] = st["sent"][-200:]

@@ -45,4 +45,4 @@ def run(dry=False):
     title, body = dp.morning_message(h, a, fc, reviews[-1:], learn)
     note = ("(テスト用の再現: 11/20 朝10時の予想を、その後24時間の実際の値動きで答え合わせしたもの。"
             "過去の日の原因推定には今日時点のニュースを使っています)\n\n")
-    notify.send(title.replace("今日の予想", "朝の振り返りと予想"), note + body, color=3447003)
+    notify.send(title, note + body, color=3447003)

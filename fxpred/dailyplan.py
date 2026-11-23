@@ -161,34 +161,67 @@ def improve(learn: dict) -> dict:
 
 
 def morning_message(h: pd.DataFrame, a: dict, fc: dict, reviews: list[dict], learn: dict) -> tuple[str, str]:
-    lines = []
-    if reviews:
-        r = reviews[-1]
-        lines += ["【昨日の振り返り】",
-                  f"予想 {r['verdict']} → 実際 {r['actual']} ({r['move']:+.2f}円)  {'○' if r['hit_dir'] else '×'}",
-                  f"値幅 {r['low']}〜{r['high']} (予想の{r['range_ratio']}倍) {'○' if r['in_range'] else '×'}",
-                  ("【大きなずれ】" + r["big_miss"] + " → 原因の推定: " + (r["cause"] or "不明") + "\n反省: " + r["lessons"])
-                  if r.get("big_miss") else "ずれは想定内 (反省・変更なし)"]
-        if learn.get("notes") and r.get("big_miss"):
-            lines.append("改善の判断: " + " / ".join(learn["notes"]))
-        allr = pd.read_csv(REVIEW)
-        lines.append(f"通算: 方向 {allr.hit_dir.mean():.0%} ({len(allr)}日) / 値幅の的中 {allr.in_range.mean():.0%}")
-        lines.append("")
+    """朝の通知 (視認性重視): 今日の判断と売買ライン → 昨日の振り返り の順"""
+    from . import fmt
     v = a["views"]
+    sup, res, c = fc["support"], fc["resistance"], fc["price"]
+    lines = []
+    if fc["verdict"] == "買い寄り":
+        e = sup + 0.05; plan = ("買い", e, sup - 0.20, res - 0.10)
+    elif fc["verdict"] == "売り寄り":
+        e = res - 0.05; plan = ("売り", e, res + 0.20, sup + 0.10)
+    else:
+        plan = None
+    if plan:
+        word, e, stop, tgt = plan
+        side = 1 if word == "買い" else -1
+        lines += [f"**判断　　: {word}（{'下値' if word == '買い' else '上値'}まで待つ）**",
+                  f"**エントリー: {e - 0.05:.2f} 〜 {e + 0.05:.2f}**",
+                  f"**損切り　: {stop:.2f}**（{fmt.pips(e, stop, side):+d} pips）",
+                  f"**利確　　: {tgt:.2f}**（{fmt.pips(e, tgt, side):+d} pips）"]
+    else:
+        lines += ["**判断　　: 様子見**（方向感なし。チャンスが来たら別途通知）",
+                  f"**買うなら: {sup:.2f} 付近で反発確認 / 損切り {sup - 0.20:.2f} / 利確 {res - 0.10:.2f}**",
+                  f"**売るなら: {res:.2f} 付近で反落確認 / 損切り {res + 0.20:.2f} / 利確 {sup + 0.10:.2f}**"]
+    # 信頼度は売買シグナルと同じ計算 (条件の一致度)。様子見の日は「買い・売りどちらも条件がそろっていない」ことを示す
+    from . import edge, scan
+    try:
+        ctx = scan.context(h)
+        reg = a["regime"]
+        best = 0
+        for sd in (1, -1):
+            if plan and sd != (1 if plan[0] == "買い" else -1):
+                continue
+            n_ok, ok, ng = edge.confluence(sd, ctx["tf"], scan.near_level(h, sd), ctx["p_up"], ctx["vix_chg"], reg, False)
+            agree = 1 if fc["verdict"] == ("買い寄り" if sd == 1 else "売り寄り") else 0
+            best = max(best, edge.confidence(ok, agree, 0, learn.get("cond_weights")))
+        conf = best
+    except Exception:
+        conf = 0
+    lines += [f"**信頼度　: {conf}%**　予想値幅 {fc['exp_low']:.2f}〜{fc['exp_high']:.2f}",
+              f"現在 {c:.2f}　下値 {sup:.2f} / 上値 {res:.2f}　相場: {a['regime']}"]
     ev = [e for e in rg.st.events(h.index[-50:].append(pd.DatetimeIndex([h.index[-1] + timedelta(days=2)])))
           if timedelta(0) < e - h.index[-1] <= timedelta(hours=24)]
-    lines += ["【今日の予想】",
-              f"現在 {fc['price']:.2f}円 / 相場状態: {a['regime']} (主担当: {fc['lead']})",
-              f"方向: {fc['verdict']} (まとめ役のスコア {fc['score']:+})",
-              f"予想値幅: {fc['exp_low']:.2f}〜{fc['exp_high']:.2f}",
-              f"下値 {fc['support']:.2f} / 上値 {fc['resistance']:.2f}",
-              "重要指標: " + ("、".join(f"{e.tz_convert(JST):%H:%M}" for e in ev) if ev else "主要な発表なし (FOMC・雇用統計基準)"),
-              "", "【担当AIの見立て】"]
-    for name in ("トレンド担当", "レンジ担当", "急変担当"):
-        lines.append(f"■ {name}{' (主担当)' if name == fc['lead'] else ''}")
-        lines += ["・" + x for x in v[name]["lines"]]
-    lines += ["", "※AIの予想であり利益を保証しません。チャンスと判断した時は別途通知します"]
-    return f"USD/JPY 今日の予想 {pd.Timestamp.now(tz=JST):%m/%d}", "\n".join(lines)
+    if ev:
+        lines.append("重要指標: " + "、".join(f"{e.tz_convert(JST):%H:%M}" for e in ev))
+    lines += ["━━━━━━━━━━", "担当AIの見立て",
+              f"・トレンド: {v['トレンド担当'].get('direction', '')} / {v['トレンド担当'].get('status', '')}",
+              f"・レンジ: {v['レンジ担当']['lines'][-1]}",
+              f"・急変: " + (v['急変担当']['causes'][0][0] + "の話題が多い" if v['急変担当'].get('causes') else "目立った材料なし")]
+    if reviews:
+        r = reviews[-1]
+        allr = pd.read_csv(REVIEW)
+        lines += ["━━━━━━━━━━", "昨日の振り返り",
+                  f"{'○' if r['hit_dir'] else '×'} 予想 {r['verdict']} → 実際 {r['move']:+.2f}円（{r['low']}〜{r['high']}）"]
+        if r.get("big_miss"):
+            lines += [f"大きなずれ: {r['big_miss']}", f"原因の推定: {r['cause'] or '不明'}",
+                      "改善: " + " / ".join(learn.get("notes", [])[:2])]
+        else:
+            lines.append("ずれは想定内（変更なし）")
+        lines.append(f"通算: 方向 {allr.hit_dir.mean():.0%}（{len(allr)}日）")
+    lines.append("※AIの予想であり利益を保証しません")
+    word = plan[0] if plan else "様子見"
+    return f"{'🟢' if word == '買い' else '🔴' if word == '売り' else '⚪'} 今日のUSD/JPY: {word} 信頼度 {conf}%", "\n".join(lines)
 
 
 def run(dry=False):
