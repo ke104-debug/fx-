@@ -143,6 +143,55 @@ def size(entry, stop, risk):
     return units, loss_yen
 
 
+def quick_chance(trigger, price):
+    """簡易監視がチャンス候補を見つけた時の詳しい分析。信頼度が基準以上なら (タイトル, 本文, 色) を返す"""
+    from .dailyplan import load_learning
+    kind, level = trigger
+    h = rg.prepare(load_recent())
+    n = len(h) - 1
+    now = pd.Timestamp.now(tz="UTC")
+    state_now = rg.NAMES[h.regime.iat[n]]
+    rv = sp.range_view(h, h.rsi.iat[n])
+    if kind == "near_support":
+        side, stop, tgt, why = 1, rv["support"] - 0.20, rv["resistance"] - 0.10, f"下値 {rv['support']:.2f} に接近"
+    elif kind == "near_resistance":
+        side, stop, tgt, why = -1, rv["resistance"] + 0.20, rv["support"] + 0.10, f"上値 {rv['resistance']:.2f} に接近"
+    else:
+        up = bool(h.trend_up.iat[n])
+        side = 1 if price > level else -1
+        if (side == 1) != up:
+            return None   # 大きな流れと逆方向の反動は取らない (検証で成績が悪い)
+        size = abs(h.Close.iloc[-24:].max() - h.Close.iloc[-24:].min())
+        stop, tgt, why = level - side * 0.20, level + side * 0.4 * size, "急変後の下げ止まり (上げ止まり) を確認"
+    if (tgt - price) * side <= 0.05 or (price - stop) * side <= 0.05:
+        return None
+    if kind != "rebound" and not awake(now, rg.st.events(h.index[-200:])):
+        return None
+    ctx = context(h)
+    anom = edge.anomaly(h)
+    n_ok, ok, ng = edge.confluence(side, ctx["tf"], f"{why}", ctx["p_up"], ctx["vix_chg"], state_now, False)
+    learn = load_learning()
+    views = {"急変担当": sp.shock_view(h, anom, sp.headlines(hours=6)), "レンジ担当": rv, "トレンド担当": sp.trend_view(h)}
+    coord = sp.coordinate(state_now, views, learn)
+    agree = 1 if coord["verdict"] == ("買い寄り" if side == 1 else "売り寄り") else \
+        -1 if coord["verdict"] == ("売り寄り" if side == 1 else "買い寄り") else 0
+    stop_why = edge.no_trade(h, now, state_now, ctx["tf"], anom) if kind != "rebound" else []
+    serious = [w for w in stop_why if w.startswith(("重要指標", "急変の最中", "週末"))]
+    score = edge.confidence(ok, agree, len(stop_why), learn.get("cond_weights"))
+    send_at = learn.get("send_at", edge.SEND_AT)
+    key = "S" if kind == "rebound" else "H4"
+    log_signal(now.floor("min"), key, {"side": side, "entry": price, "stop": stop, "target": tgt}, score,
+               "見送り" if serious else "買い" if side == 1 else "売り", sent=score >= send_at and agree >= 0,
+               conditions="|".join(x.split(" ")[0] for x in ok))
+    if score < send_at or agree < 0:
+        print(f"(簡易監視の候補 {why}: 信頼度{score}で見送り)")
+        return None
+    reasons = [why] + [x for x in ok if not x.startswith(("相場状態", "価格帯"))]
+    title, body = fmt.signal(side, price, stop, tgt, score, reasons, [x for x in ng] + stop_why,
+                             f"{now.tz_convert(JST):%m/%d %H:%M} から最長48時間", serious)
+    return title, body, (16776960 if serious else 5763719)
+
+
 def run(dry=False):
     h = rg.prepare(load_recent())
     n = len(h) - 1
@@ -227,6 +276,13 @@ def run(dry=False):
         msgs.append(("wait" if serious else "ready", title, body))
         st.setdefault("sent", []).append(sig_id)
         st["sent"] = st["sent"][-200:]
+    try:
+        rv = sp.range_view(h, h.rsi.iat[n])
+        lv_path = os.path.join(os.path.dirname(STATE) or ".", "levels.json")
+        json.dump({"support": rv["support"], "resistance": rv["resistance"], "regime": state_now,
+                   "trend_up": bool(h.trend_up.iat[n]), "time": f"{t:%Y-%m-%d %H:%M}"}, open(lv_path, "w"), ensure_ascii=False)
+    except Exception:
+        pass
     st["last_run"] = datetime.now(timezone.utc).isoformat(timespec="minutes")
     st["last_bar"] = f"{t:%Y-%m-%d %H:%M}"
     st["price"] = round(float(h.Close.iat[n]), 3)
