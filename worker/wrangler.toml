@@ -1,0 +1,11 @@
+# Cloudflare Workers の設定 (Git 連携でこのフォルダを読み込む: ルートディレクトリ = worker)
+name = "ai-fx-clock"
+main = "src.js"
+compatibility_date = "2025-06-01"
+
+[triggers]
+# 5分ごと (3,8,13…分)。毎時0分ちょうどの混雑を避ける
+crons = ["3-58/5 * * * *"]
+
+[observability]
+enabled = true

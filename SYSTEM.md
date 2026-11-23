@@ -73,3 +73,10 @@ Claude のセッション内の進み具合の通知は `discord-notify` コマ�
 2. `gh api "repos/ke104-debug/fx-/actions/runs?per_page=20"` で最近の自動実行を確認
 3. `journal/` の最新の記録 (振り返り・決済) と `reports/` を確認
 4. 作業後は必ずコミットして push。ルールや設定を変えたら `CHANGELOG.md` に追記する
+
+## 7. Cloudflare の時計役 (`worker/`)
+GitHub の定期実行は大きく間引かれる (24時間で予定の数%) ため、Cloudflare Workers の定期実行 (無料・正確) から GitHub の実行ボタン (workflow_dispatch) を押す。
+- 5分ごと: `fx-quick.yml`、30分ごと (15〜19分・45〜49分): `fx-auto.yml`、土曜 01:15 UTC: `fx-auto.yml` (週次)。市場が閉まっている間は何もしない
+- Cloudflare の Git 連携でこのリポジトリの `worker/` を読み込んでデプロイ。秘密の値 `GH_TOKEN` (fx- の Actions 読み書き権限だけを持つ GitHub のトークン) を Cloudflare に設定
+- Worker の URL を開くと状態 (token_set など) を確認できる
+- GitHub 側の定期実行 (cron) は予備として残しているが、時計役が安定したら外してよい
