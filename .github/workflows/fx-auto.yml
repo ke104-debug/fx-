@@ -10,6 +10,10 @@ on:
         description: "朝の予想・振り返りも実行する"
         type: boolean
         default: false
+      test:
+        description: "テスト通知だけ送る (過去の場面を再現。記録は残さない)"
+        type: boolean
+        default: false
 permissions:
   contents: write
 concurrency: fx-auto
@@ -30,7 +34,13 @@ jobs:
             journal
           key: fx-auto-${{ github.run_id }}
           restore-keys: fx-auto-
+      - name: テスト通知
+        if: ${{ inputs.test }}
+        run: python -m fxpred testnotify
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       - name: 監視 (朝10時台は予想・振り返りも)
+        if: ${{ !inputs.test }}
         run: python -m fxpred auto ${{ inputs.morning && '--morning' || '' }}
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}

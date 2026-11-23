@@ -43,6 +43,9 @@ def main(argv):
     elif cmd == "morning":
         from . import dailyplan
         dailyplan.run(dry="--dry" in args)
+    elif cmd == "testnotify":
+        from . import testnotify
+        testnotify.run(dry="--dry" in args)
     elif cmd == "auto":
         # GitHub Actions から毎時実行: 日本時間10時台の最初の1回だけ朝の予想・振り返り、その後に監視
         import os, json, pandas as pd
