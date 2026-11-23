@@ -5,6 +5,7 @@
   python -m fxpred backtest                        # 15分足モデルの過去検証
   python -m fxpred snapshot                        # Web ページ用に USD/JPY のテクニカル予想とシステム状況を JSON で出す
   python -m fxpred strategies [コストpips]           # 売買作戦 (レンジ逆張り等) を1時間足2.8年で検証
+  python -m fxpred portfolio                       # 複数作戦で100万円を運用した想定のシミュレーション
   python -m fxpred study                           # 日足(2004年〜)でテクニカル/マクロの効き目を検証
 """
 import json
@@ -31,6 +32,9 @@ def main(argv):
     elif cmd == "strategies":
         from . import strategy_report
         strategy_report.run(float(args[0]) if args else 0.5)
+    elif cmd == "portfolio":
+        from . import portfolio
+        portfolio.run()
     elif cmd == "study":
         from . import daily
         daily.run()
