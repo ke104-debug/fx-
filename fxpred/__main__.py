@@ -43,6 +43,20 @@ def main(argv):
     elif cmd == "morning":
         from . import dailyplan
         dailyplan.run(dry="--dry" in args)
+    elif cmd == "auto":
+        # GitHub Actions から毎時実行: 日本時間10時台の最初の1回だけ朝の予想・振り返り、その後に監視
+        import os, json, pandas as pd
+        from . import scan, dailyplan
+        now = pd.Timestamp.now(tz="Asia/Tokyo")
+        path = os.getenv("FX_SCAN_STATE", "state/scan.json")
+        st = json.load(open(path)) if os.path.exists(path) else {}
+        if now.hour == 10 and st.get("morning_done") != f"{now:%Y-%m-%d}" and now.weekday() < 5 or "--morning" in args:
+            dailyplan.run()
+            st = json.load(open(path)) if os.path.exists(path) else {}
+            st["morning_done"] = f"{now:%Y-%m-%d}"
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            json.dump(st, open(path, "w"), ensure_ascii=False, indent=1)
+        scan.run()
     elif cmd == "study":
         from . import daily
         daily.run()

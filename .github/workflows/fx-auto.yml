@@ -1,0 +1,53 @@
+name: AI_FX 自動運用
+# 毎時: 相場の監視 (チャンス・急変の時だけ Discord に通知)
+# 毎朝10時 (日本時間): 昨日の振り返り・自己改善・今日の予想を通知し、記録 (journal/) をリポジトリに保存
+on:
+  schedule:
+    - cron: "5 * * * 0-5"   # 毎時5分 (UTC 日〜金)。GitHub の混雑で数分〜十数分遅れることがあります
+  workflow_dispatch:
+    inputs:
+      morning:
+        description: "朝の予想・振り返りも実行する"
+        type: boolean
+        default: false
+permissions:
+  contents: write
+concurrency: fx-auto
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt
+      - name: 前回の状態と記録を復元
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            state
+            journal
+          key: fx-auto-${{ github.run_id }}
+          restore-keys: fx-auto-
+      - name: 監視 (朝10時台は予想・振り返りも)
+        run: python -m fxpred auto ${{ inputs.morning && '--morning' || '' }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      - name: 状態と記録を保存
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            state
+            journal
+          key: fx-auto-${{ github.run_id }}
+      - name: 予想・振り返りの記録をリポジトリに保存 (変更があった時だけ)
+        run: |
+          git config user.name "ai-fx-bot"
+          git config user.email "ai-fx-bot@users.noreply.github.com"
+          git add journal
+          if ! git diff --cached --quiet; then
+            git commit -m "記録を更新 $(date -u +%Y-%m-%dT%H:%MZ)"
+            git pull --rebase -q && git push -q
+          fi

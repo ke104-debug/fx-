@@ -104,3 +104,9 @@ H3+H4+H5 を同時に使い3%なら +71% (最大下落40%)。ロンドンレン�
 - `python -m fxpred morning`: 毎朝10時 (日本時間) に、昨日の予想の答え合わせ → 自己改善 (担当ごとの重み・予想値幅の補正を `journal/learning.json` に保存) → 今日の予想を Discord に送る
 - 監視の通知は、信頼度「中」以上で、担当AIの見立てと逆向きでない時だけ送る (急変の反動は除く)。送ったシグナルは `journal/signals.csv` に記録
 - 2026-08〜11 の95日をさかのぼって試すと、値幅の的中は前半33%→後半62%に改善。方向の正解率は39%で、当たらない担当の重みが自動で下がり「中立」が増えた
+
+## 自動運用 (GitHub Actions, `.github/workflows/fx-auto.yml`)
+- 毎時5分 (UTC 日〜金) に `python -m fxpred auto` を実行。日本時間10時台の最初の1回は朝の予想・振り返りも行い、`journal/` をリポジトリに保存
+- 必要な設定: リポジトリの Settings → Secrets and variables → Actions → New repository secret で `DISCORD_WEBHOOK_URL`
+- 通知時間は `config/notify.json` (通常 10:00〜25:00、急変は時間外でも)
+- 手動実行: Actions タブ → 「AI_FX 自動運用」→ Run workflow (朝の予想も試すならチェックを入れる)
