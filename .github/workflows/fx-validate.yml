@@ -1,0 +1,53 @@
+name: 20年検証 (自動)
+# データ取得が終わるたびに動く。データが足りなければ取得をもう一度起動し、そろったら20年検証を実行して
+# reports/validate20.md に保存し、要約を Discord に送る。取得が1か月分も進まなかった時は止めて知らせる。
+on:
+  workflow_run:
+    workflows: ["20年データの取得 (手動)"]
+    types: [completed]
+  workflow_dispatch: {}
+permissions:
+  contents: write
+  actions: write
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt
+      - name: 取得済みデータを展開
+        run: |
+          git fetch -q origin data-duka
+          git archive origin/data-duka data | tar -x
+          echo "MSG=$(git log -1 --format=%s origin/data-duka)" >> $GITHUB_ENV
+          echo "COUNT=$(ls data/duka | wc -l)" >> $GITHUB_ENV
+      - name: そろい具合の判定
+        id: judge
+        run: |
+          echo "取得済み: $COUNT / 252 ($MSG)"
+          if [ "$COUNT" -ge 245 ]; then echo "next=validate" >> $GITHUB_OUTPUT
+          elif echo "$MSG" | grep -q "(+0)"; then echo "next=stuck" >> $GITHUB_OUTPUT
+          else echo "next=more" >> $GITHUB_OUTPUT; fi
+      - name: 足りなければ取得をもう一度
+        if: steps.judge.outputs.next == 'more'
+        run: gh workflow run duka-download.yml --ref main
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: 取得が進まない時は知らせる
+        if: steps.judge.outputs.next == 'stuck'
+        run: python -c "from fxpred import notify; notify.send('20年データの取得が止まりました', '取得済み ${{ env.COUNT }}/252 か月。Dukascopy に接続できない可能性があります。', color=15548997)"
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      - name: 20年検証
+        if: steps.judge.outputs.next == 'validate'
+        run: |
+          python -m fxpred.validate_all > summary.txt
+          python -c "from fxpred import notify; notify.send('📊 20年検証の結果', open('summary.txt').read() + '\n詳細: reports/validate20.md', color=3447003)"
+          git config user.name "ai-fx-bot"
+          git config user.email "ai-fx-bot@users.noreply.github.com"
+          git add reports && git commit -qm "20年検証レポートを更新" && git pull --rebase -q && git push -q
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}

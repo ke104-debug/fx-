@@ -15,14 +15,17 @@ jobs:
         run: |
           git fetch -q origin data-duka && git show origin/data-duka --name-only >/dev/null 2>&1 && \
             git archive origin/data-duka data | tar -x || echo "まだ取得済みデータなし"
-      - name: 取得 (最大5時間)
-        run: timeout 18000 python tools/duka_download.py 2004 2025 || true
+      - name: 取得 (最大4.5時間)
+        run: |
+          mkdir -p data/duka; echo "BEFORE=$(ls data/duka | wc -l)" >> $GITHUB_ENV
+          timeout 16200 python tools/duka_download.py 2004 2025 || true
       - name: data-duka ブランチに保存
         run: |
           git config user.name "ai-fx-bot"
           git config user.email "ai-fx-bot@users.noreply.github.com"
           git checkout -q --orphan data-duka-tmp
           git rm -rq --cached . && git add -f data/duka
-          git commit -qm "Dukascopy USD/JPY 1時間足 $(ls data/duka | wc -l) か月分"
+          AFTER=$(ls data/duka | wc -l)
+          git commit -qm "Dukascopy USD/JPY 1時間足 ${AFTER} か月分 (+$((AFTER - BEFORE)))"
           git push -qf origin data-duka-tmp:data-duka
           echo "$(ls data/duka | wc -l) files"
