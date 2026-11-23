@@ -58,6 +58,19 @@ def no_trade(h: pd.DataFrame, now: pd.Timestamp, regime: str, tf_trends: dict, a
     return why
 
 
+# 信頼度 (0〜100) の配点。検証で裏付けのある条件ほど重くする。合計100。
+# 自己改善で journal/learning.json の "cond_weights" に上書きされることがある
+COND_WEIGHTS = {"時間足": 20, "価格帯": 20, "AIモデル": 5, "市場心理": 10, "相場状態": 10, "作戦シグナル": 35}
+SEND_AT, HIGH_AT = 55, 75   # この点数以上で通知 / 高確度
+
+
+def confidence(ok: list[str], coord_agree: int = 0, penalties: int = 0, weights: dict | None = None) -> int:
+    """そろった条件の配点の合計 + まとめ役の賛否 (±10) - 警戒事項 (1つ10点)。0〜100"""
+    w = weights or COND_WEIGHTS
+    pts = sum(v for k, v in w.items() if any(x.startswith(k) for x in ok))
+    return int(np.clip(pts + 10 * coord_agree - 10 * penalties, 0, 100))
+
+
 def confluence(side: int, tf_trends: dict, near_level: str | None, p_up: float, vix_change: float | None,
                regime: str, has_signal: bool) -> tuple[int, list[str], list[str]]:
     """買い(side=1)/売り(-1) について、そろっている条件とそろっていない条件を数える"""
@@ -66,8 +79,8 @@ def confluence(side: int, tf_trends: dict, near_level: str | None, p_up: float, 
     agree = [k for k, v in tf_trends.items() if v == want]
     against = [k for k, v in tf_trends.items() if v not in (want, "もみ合い")]
     desc = (f"{'・'.join(agree)}が{want}" if agree else f"{want}の時間足なし") + (f"、{'・'.join(against)}が逆" if against else "")
-    (ok if agree and not against else ng).append(f"時間足の方向 ({desc})")
-    (ok if near_level else ng).append(f"重要な価格帯 ({near_level or '近くにない'})")
+    (ok if agree and not against else ng).append(f"時間足 ({desc})")
+    (ok if near_level else ng).append(f"価格帯 ({near_level or '重要な価格帯が近くにない'})")
     prob = p_up if side == 1 else 1 - p_up
     (ok if prob >= 0.58 else ng).append(f"AIモデル ({'上昇' if side == 1 else '下落'}確率 {prob:.0%}、ただし検証の正解率は約51〜54%)")
     if vix_change is not None:
@@ -75,5 +88,5 @@ def confluence(side: int, tf_trends: dict, near_level: str | None, p_up: float, 
         (ok if (calm and side == 1) or (not calm and side == -1) else ng).append(
             f"市場心理 (VIX {'低下=リスク回避が和らぐ' if calm else '上昇=リスク回避'})")
     (ok if regime in ("通常", "トレンド") else ng).append(f"相場状態 ({regime})")
-    (ok if has_signal else ng).append("検証済み作戦のシグナル" + ("あり" if has_signal else "なし"))
+    (ok if has_signal else ng).append("作戦シグナル (検証済みの作戦" + ("が発生)" if has_signal else "なし)"))
     return len(ok), ok, ng

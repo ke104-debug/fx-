@@ -37,7 +37,8 @@ def analyze(h: pd.DataFrame, learn: dict) -> dict:
 
 def forecast(h: pd.DataFrame, a: dict, learn: dict) -> dict:
     c = float(h.Close.iat[-1])
-    day_rng = float((h.High.rolling(24).max() - h.Low.rolling(24).min()).iloc[-480:].median())
+    # 直近5日の値幅 (24時間ごと) の中央値をもとにする
+    day_rng = float((h.High.rolling(24).max() - h.Low.rolling(24).min()).iloc[-120::24].median())
     rng = day_rng * learn.get("range_scale", 1.0)
     shift = {"買い寄り": 0.2, "売り寄り": -0.2, "中立": 0.0}[a["coord"]["verdict"]] * rng
     rv = a["views"]["レンジ担当"]
@@ -91,10 +92,27 @@ def review(h: pd.DataFrame, learn: dict) -> list[dict]:
         if res_broken: lessons.append(f"上値 {r.resistance} を上抜けた")
         wrong = [k for k, v in spec.items() if v is False]
         if wrong: lessons.append("外した担当: " + "、".join(wrong))
+        # 大きくずれたかどうか (小さなずれは「想定内」として反省しない)
+        big = []
+        # 基準: 方向を外して0.8円以上動いた / 値幅が予想の2倍以上か0.4倍以下 / 下値・上値を0.5円以上抜けて、その外で終わった
+        if not hit_dir and abs(move) >= 0.8: big.append("方向")
+        if rng_ratio >= 2.5 or rng_ratio <= 0.35: big.append("値幅")
+        if (lo < r.support - 0.5 and close < r.support) or (hi > r.resistance + 0.5 and close > r.resistance): big.append("価格帯")
+        cause = ""
+        if big:
+            sd = h.Close.diff().rolling(480).std().reindex(w.index).iat[0]
+            zmax = (w.Close.diff().abs() / sd).max()
+            cause = f"その日の最大の1時間の動きは普段の{zmax:.1f}倍"
+            try:
+                c = sp.classify(sp.headlines(hours=36))
+                if c: cause += "、ニュースの主な話題: " + "、".join(f"{k}({n}件)" for k, n, _ in c[:2])
+            except Exception:
+                pass
         row = {"time_utc": r.time_utc, "date": r.date, "verdict": r.verdict, "actual": actual, "move": round(move, 2),
                "hit_dir": hit_dir, "high": round(hi, 2), "low": round(lo, 2), "range_ratio": round(rng_ratio, 2),
                "in_range": in_range, "support_broken": sup_broken, "resistance_broken": res_broken,
-               **{f"hit_{k}": v for k, v in spec.items()}, "lessons": " / ".join(lessons) or "予想どおり"}
+               **{f"hit_{k}": v for k, v in spec.items()}, "big_miss": "・".join(big), "cause": cause,
+               "lessons": " / ".join(lessons) or "予想どおり"}
         pd.DataFrame([row]).to_csv(REVIEW, mode="a", header=not os.path.exists(REVIEW), index=False)
         out.append(row)
     if out:
@@ -103,24 +121,39 @@ def review(h: pd.DataFrame, learn: dict) -> list[dict]:
 
 
 def improve(learn: dict) -> dict:
-    """直近の振り返りから重みと値幅補正を更新する (少ない件数では大きく変えない)"""
-    rv = pd.read_csv(REVIEW).tail(30)
+    """反省と改善。小さなずれでは何も変えない。
+    同じ種類の大きなずれが直近20日で3回以上くり返された時だけ、その部分を少しだけ調整する (偶然で変えないため)"""
+    rv = pd.read_csv(REVIEW).tail(20)
     notes = []
-    for name in ("急変担当", "レンジ担当", "トレンド担当"):
-        col = rv.get(f"hit_{name}")
-        if col is None:
-            continue
-        calls = col.dropna().astype(str).map({"True": 1, "False": 0}).dropna()
-        if len(calls) >= 5:
-            acc = calls.mean()
-            wgt = float(np.clip(0.5 + (acc - 0.5) * 2, 0.5, 1.5))   # 正解率50%で1.0倍、75%で1.5倍、25%で0.5倍
-            old = learn["weights"].get(name, 1.0)
-            learn["weights"][name] = round(0.7 * old + 0.3 * wgt, 2)
-            notes.append(f"{name}: 直近{len(calls)}回の正解率 {acc:.0%} → 重み {learn['weights'][name]}")
-    if len(rv) >= 5:
-        target = float(np.clip(rv.range_ratio.median(), 0.7, 1.5))
-        learn["range_scale"] = round(0.7 * learn.get("range_scale", 1.0) + 0.3 * learn.get("range_scale", 1.0) * target, 3)
-        notes.append(f"予想値幅の補正: x{learn['range_scale']}")
+    big = rv.get("big_miss", pd.Series(dtype=str)).fillna("")
+    n_dir, n_rng = big.str.contains("方向").sum(), big.str.contains("値幅").sum()
+    if n_dir >= 3:
+        for name in ("急変担当", "レンジ担当", "トレンド担当"):
+            col = rv.get(f"hit_{name}")
+            calls = col.dropna().astype(str).map({"True": 1, "False": 0}).dropna() if col is not None else []
+            if len(calls) >= 5:
+                acc = calls.mean()
+                wgt = float(np.clip(0.5 + (acc - 0.5) * 2, 0.5, 1.5))
+                old = learn["weights"].get(name, 1.0)
+                learn["weights"][name] = round(0.7 * old + 0.3 * wgt, 2)
+                if abs(learn["weights"][name] - old) >= 0.01:
+                    notes.append(f"{name}の重み {old} → {learn['weights'][name]} (直近{len(calls)}回の正解率 {acc:.0%})")
+        if not notes:
+            notes.append(f"方向の大外れが{n_dir}回。担当ごとの成績に差がないため重みは変えず、見送り基準を維持")
+    if n_rng >= 3:
+        rr = rv[big.str.contains("値幅")].range_ratio
+        wide, narrow = (rr >= 2.5).sum(), (rr <= 0.35).sum()
+        old = learn.get("range_scale", 1.0)
+        if wide >= 0.75 * len(rr):
+            learn["range_scale"] = round(min(1.5, old * 1.15), 3)
+            notes.append(f"値幅を小さく見積もる大外れが{wide}回 → 予想値幅を x{old} から x{learn['range_scale']} に")
+        elif narrow >= 0.75 * len(rr):
+            learn["range_scale"] = round(max(0.7, old * 0.85), 3)
+            notes.append(f"値幅を大きく見積もる大外れが{narrow}回 → 予想値幅を x{old} から x{learn['range_scale']} に")
+        else:
+            notes.append(f"値幅の大外れ{len(rr)}回は広すぎ・狭すぎが混在 (相場の荒れ方の変化) → 変更しない")
+    if not notes:
+        notes.append("大きなずれのくり返しはなし → 変更しない (偶然の外れで設定を変えない)")
     learn["notes"] = notes
     learn["updated"] = f"{pd.Timestamp.now(tz=JST):%Y-%m-%d %H:%M}"
     json.dump(learn, open(LEARN, "w"), ensure_ascii=False, indent=1)
@@ -134,9 +167,10 @@ def morning_message(h: pd.DataFrame, a: dict, fc: dict, reviews: list[dict], lea
         lines += ["【昨日の振り返り】",
                   f"予想 {r['verdict']} → 実際 {r['actual']} ({r['move']:+.2f}円)  {'○' if r['hit_dir'] else '×'}",
                   f"値幅 {r['low']}〜{r['high']} (予想の{r['range_ratio']}倍) {'○' if r['in_range'] else '×'}",
-                  f"反省: {r['lessons']}"]
-        if learn.get("notes"):
-            lines.append("改善: " + " / ".join(learn["notes"]))
+                  ("【大きなずれ】" + r["big_miss"] + " → 原因の推定: " + (r["cause"] or "不明") + "\n反省: " + r["lessons"])
+                  if r.get("big_miss") else "ずれは想定内 (反省・変更なし)"]
+        if learn.get("notes") and r.get("big_miss"):
+            lines.append("改善の判断: " + " / ".join(learn["notes"]))
         allr = pd.read_csv(REVIEW)
         lines.append(f"通算: 方向 {allr.hit_dir.mean():.0%} ({len(allr)}日) / 値幅の的中 {allr.in_range.mean():.0%}")
         lines.append("")

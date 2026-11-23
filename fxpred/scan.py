@@ -190,13 +190,22 @@ def run(dry=False):
         n_ok, ok, ng = edge.confluence(s["side"], ctx["tf"], level, ctx["p_up"], ctx["vix_chg"], state_now, True)
         stop_why = edge.no_trade(h, now, state_now, ctx["tf"], anom) if key not in URGENT else []
         serious = [w for w in stop_why if w.startswith(("重要指標", "急変の最中", "週末"))]
-        conf = "高" if n_ok >= 5 else "中" if n_ok == 4 else "低"
+        views = {"急変担当": sp.shock_view(h, anom, sp.headlines(hours=12)), "レンジ担当": sp.range_view(h, h.rsi.iat[n]),
+                 "トレンド担当": sp.trend_view(h)}
+        from .dailyplan import load_learning
+        learn = load_learning()
+        coord = sp.coordinate(state_now, views, learn)
+        lead = coord["lead"]
+        agree = 1 if coord["verdict"] == ("買い寄り" if s["side"] == 1 else "売り寄り") else \
+            -1 if coord["verdict"] == ("売り寄り" if s["side"] == 1 else "買い寄り") else 0
+        score = edge.confidence(ok, agree, len(stop_why), learn.get("cond_weights"))
+        conf = f"{score}" 
         verdict = "ノートレード推奨" if serious else f"{'買い' if s['side'] == 1 else '売り'}"
         tgt = f"{s['target']:.2f}" if s.get("target") else "なし (追いかけ決済)"
         price = h.Close.iat[n]
         body = (f"【現在の相場】{price:.2f}円 / 24時間 {h.Low.iloc[-24:].min():.2f}〜{h.High.iloc[-24:].max():.2f} / 状態: {state_now}\n\n"
                 f"【判定】{verdict}" + (f" ({'・'.join(serious)})" if serious else "") + "\n"
-                f"【信頼度】{conf} (条件 {n_ok}/{n_ok + len(ng)} 一致)\n\n"
+                f"【信頼度】{score} / 100 (条件 {n_ok}/{n_ok + len(ng)} 一致、まとめ役 {coord['verdict']}、警戒事項 {len(stop_why)}件。{edge.SEND_AT}以上で通知、{edge.HIGH_AT}以上は高確度)\n\n"
                 f"【判断の理由】\n" + "\n".join("・" + x for x in ok) + "\n"
                 f"【そろっていない条件】\n" + ("\n".join("・" + x for x in ng) or "・なし") + "\n\n"
                 f"【売買戦略】{LABEL[key]}\n"
@@ -204,20 +213,14 @@ def run(dry=False):
                 f"{s['note']}\n\n"
                 f"【警戒事項】\n" + ("\n".join("・" + x for x in stop_why) or "・特になし") + "\n\n"
                 f"足 {t.tz_convert(JST):%m/%d %H:%M} 確定時点。※過去検証の作戦であり利益を保証しません")
-        views = {"急変担当": sp.shock_view(h, anom, sp.headlines(hours=12)), "レンジ担当": sp.range_view(h, h.rsi.iat[n]),
-                 "トレンド担当": sp.trend_view(h)}
-        from .dailyplan import load_learning
-        coord = sp.coordinate(state_now, views, load_learning())
-        lead = coord["lead"]
         body = body.replace("【売買戦略】", f"【担当AIの見立て】主担当: {lead} / まとめ役: {coord['verdict']}\n" +
                             "\n".join("・" + x for x in views[lead]["lines"]) + "\n\n【売買戦略】")
-        against = (coord["verdict"] == "売り寄り" and s["side"] == 1) or (coord["verdict"] == "買い寄り" and s["side"] == -1)
-        log_signal(t, key, s, conf, verdict)
-        if (conf == "低" or against) and key not in URGENT:
-            print(f"(チャンスと判断しないため送らない: 信頼度{conf}{'、担当AIと逆向き' if against else ''}) {LABEL[key]}")
+        log_signal(t, key, s, score, verdict)
+        if (score < edge.SEND_AT or agree < 0) and key not in URGENT:
+            print(f"(チャンスと判断しないため送らない: 信頼度{score}{'、担当AIと逆向き' if agree < 0 else ''}) {LABEL[key]}")
             st.setdefault("sent", []).append(sig_id)
             continue
-        title = ("ノートレード推奨: " if serious else "高確度シグナル: " if conf == "高" else "売買シグナル: ") + LABEL[key]
+        title = ("ノートレード推奨: " if serious else "高確度シグナル: " if score >= edge.HIGH_AT else "売買シグナル: ") + LABEL[key]
         msgs.append(("wait" if serious else "ready", title, body))
         st.setdefault("sent", []).append(sig_id)
         st["sent"] = st["sent"][-200:]
