@@ -189,7 +189,8 @@ def quick_chance(trigger, price):
     reasons = [why] + [x for x in ok if not x.startswith(("相場状態", "価格帯"))]
     title, body = fmt.signal(side, price, stop, tgt, score, reasons, [x for x in ng] + stop_why,
                              f"{now.tz_convert(JST):%m/%d %H:%M} から最長48時間", serious)
-    return title, body, (16776960 if serious else 5763719)
+    pos = None if serious else (side, price, stop, tgt, key)
+    return title, body, (16776960 if serious else 5763719), pos
 
 
 def run(dry=False):
@@ -274,6 +275,10 @@ def run(dry=False):
             st.setdefault("sent", []).append(sig_id)
             continue
         msgs.append(("wait" if serious else "ready", title, body))
+        if not serious and not dry:
+            from . import positions
+            tg = s["target"] if s.get("target") else s["entry"] + s["side"] * 2 * abs(s["entry"] - s["stop"])
+            positions.add(s["side"], s["entry"], s["stop"], tg, key, int(t.timestamp()) + 3600)
         st.setdefault("sent", []).append(sig_id)
         st["sent"] = st["sent"][-200:]
     try:

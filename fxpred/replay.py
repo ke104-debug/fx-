@@ -73,7 +73,8 @@ def hourly(h: pd.DataFrame, vix: pd.Series) -> pd.DataFrame:
             res, pips = _outcome(h, i + 1, s["side"], h.Open.iat[i + 1], s["stop"], tgt, HOLD[key])
             rows.append(dict(time=t, key=key, regime=reg, side=s["side"], score=score, agree=agree, awake=awake,
                              conds="|".join(x.split(" ")[0] for x in ok), n_warn=len(stop_why),
-                             serious=bool(serious), sent=sent and not serious, result=res, pips=round(pips, 1)))
+                             serious=bool(serious), sent=sent and not serious, result=res, pips=round(pips, 1),
+                             stop=s["stop"], target=tgt, hold=HOLD[key]))
     return pd.DataFrame(rows)
 
 
@@ -120,7 +121,8 @@ def quick5(h: pd.DataFrame) -> pd.DataFrame:
                 if (side == 1 and Lo[k] <= stop) or (side == -1 and H[k] >= stop): res, pips = "損切り", side * (stop - e) * 100 - 0.5; break
                 if (side == 1 and H[k] >= tgt) or (side == -1 and Lo[k] <= tgt): res, pips = "利確", side * (tgt - e) * 100 - 0.5; break
             if res is None: res, pips = "期限切れ", side * (C[k] - e) * 100 - 0.5
-            rows.append(dict(time=t, side=side, score=score, agree=agree, sent=sent, result=res, pips=round(pips, 1)))
+            rows.append(dict(time=t, side=side, score=score, agree=agree, sent=sent, result=res, pips=round(pips, 1),
+                             stop=stop, target=tgt, hold=48, ready=m5.index[i + 1]))
             busy = k
             break
     return pd.DataFrame(rows)
@@ -159,3 +161,35 @@ def summarize(df: pd.DataFrame, label: str) -> list[str]:
         span = max((df.time.max() - df.time.min()).days / 30.4, 1)
         out.append(f"  通知の頻度: 月{len(s) / span:.1f}回")
     return out
+
+
+def delayed(m5: pd.DataFrame, sig: pd.DataFrame, delay_min: int, manual_exit: bool) -> pd.DataFrame:
+    """通知が出た時刻 (ready) から delay_min 分後の価格で入る。損切り・利確の価格は通知どおり。
+    入る時点で損切り・利確をすでに越えていたら「見送り (機会を逃した)」。
+    manual_exit=True: 決済も通知を見てから delay_min 分後の価格で行う (注文を入れておかない場合)"""
+    idx, O, H, L, C = m5.index, m5.Open.values, m5.High.values, m5.Low.values, m5.Close.values
+    rows = []
+    for r in sig.itertuples():
+        t_in = r.ready + pd.Timedelta(minutes=delay_min)
+        j = idx.searchsorted(t_in)
+        if j >= len(idx) - 1:
+            continue
+        e = O[j]
+        side, stop, tgt = r.side, r.stop, r.target
+        if side * (e - stop) <= 0 or side * (tgt - e) <= 0:
+            rows.append(dict(time=r.time, result="見送り", pips=0.0)); continue
+        end = min(j + r.hold * 12, len(idx) - 1)
+        res, px = "期限切れ", C[end]
+        for k in range(j, end + 1):
+            hit_stop = (side == 1 and L[k] <= stop) or (side == -1 and H[k] >= stop)
+            hit_tgt = (side == 1 and H[k] >= tgt) or (side == -1 and L[k] <= tgt)
+            if hit_stop or hit_tgt:
+                res = "損切り" if hit_stop else "利確"
+                if manual_exit:   # 通知から delay 分後の価格で決済
+                    k2 = min(k + max(delay_min // 5, 1), len(idx) - 1)
+                    px = O[k2]
+                else:
+                    px = stop if hit_stop else tgt
+                break
+        rows.append(dict(time=r.time, result=res, pips=round(side * (px - e) * 100 - 0.5, 1)))
+    return pd.DataFrame(rows)

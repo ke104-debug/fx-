@@ -73,10 +73,12 @@ def run(dry=False):
     if time.time() - bars[-1][0] > 15 * 60:
         print("市場が閉まっているか、データが止まっています"); return
     c, sd, moves, worst, shock = check(bars)
+    from . import positions
+    exits = positions.check(bars)
     st = json.load(open(STATE)) if os.path.exists(STATE) else {}
     lv = json.load(open(LEVELS)) if os.path.exists(LEVELS) else {}
     now = int(time.time())
-    out = []
+    out = list(exits)
     # 1) 急変 (時間外でも送る)。同じ向きの急変は30分に1回まで (さらに大きくなった時は再通知)
     if shock:
         k, (mv, z) = worst
@@ -114,7 +116,9 @@ def run(dry=False):
             from . import scan
             msg = scan.quick_chance(trigger, c)
             if msg:
-                out.append(msg)
+                out.append(msg[:3])
+                if len(msg) > 3 and msg[3]:
+                    positions.add(*msg[3], t_epoch=now)
                 if trigger[0] == "rebound":
                     st.pop("pending_rebound", None)
         except Exception as e:  # 詳しい分析に失敗しても、簡易監視は止めない
