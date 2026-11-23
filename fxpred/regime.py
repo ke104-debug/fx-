@@ -32,6 +32,13 @@ def prepare(d: pd.DataFrame) -> pd.DataFrame:
     prev = pd.Series([ev[p] if p >= 0 else pd.NaT for p in pos], index=h.index)
     h["h_since_event"] = (h.index.to_series() - prev).dt.total_seconds() / 3600 - 1
     h["regime"] = label(h)
+    # 東京時間 (0-6時UTC) の高値・安値を日ごとに事前計算 (東京レンジ作戦の高速化)
+    tk = h[h.index.hour < 6]
+    g = tk.groupby(tk.index.normalize())
+    day = h.index.normalize()
+    h["tk_hi"] = g.High.max().reindex(day).values
+    h["tk_lo"] = g.Low.min().reindex(day).values
+    h["tk_n"] = g.size().reindex(day).values
     return h
 
 

@@ -120,9 +120,13 @@ def h_tokyo_break(d, i):
     """東京時間 (0-6時UTC) の値幅を、ロンドン時間 (7-11時UTC) に抜けた方向へ。反対側で損切り、2倍で利確"""
     t = d.index[i]
     if not (7 <= t.hour <= 11): return None
-    day = d[(d.index >= t.normalize()) & (d.index < t.normalize() + pd.Timedelta(hours=6))]
-    if len(day) < 5: return None
-    hi, lo = day.High.max(), day.Low.min()
+    if "tk_hi" in d:   # 事前計算済み (高速版)
+        hi, lo, cnt = d.tk_hi.iat[i], d.tk_lo.iat[i], d.tk_n.iat[i]
+        if not cnt >= 5: return None
+    else:
+        day = d[(d.index >= t.normalize()) & (d.index < t.normalize() + pd.Timedelta(hours=6))]
+        if len(day) < 5: return None
+        hi, lo = day.High.max(), day.Low.min()
     w = (hi - lo) / PIP
     if not (15 <= w <= 60): return None
     r, p = d.iloc[i], d.iloc[i - 1]
