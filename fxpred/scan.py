@@ -26,6 +26,32 @@ EXIT_TEXT = {"eod": "届かなければ当日 日本時間朝5時に手仕舞い
 RULE_FN = {"H3": pf.h_tokyo_break, "H4": pf.h_range_trend, "H5": pf.h_event_momo}
 
 
+CONFIG = os.path.join(os.path.dirname(__file__), "..", "config", "notify.json")
+URGENT = {"S"}   # 時間外でも送る作戦 (急変の反動)
+
+
+def awake(now_utc: pd.Timestamp, events=None) -> bool:
+    """利用者が起きている時間か (config/notify.json)。指標発表の前後と、日付ごとの追加時間も含める"""
+    cfg = json.load(open(CONFIG)) if os.path.exists(CONFIG) else {"start": "10:00", "end": "25:00"}
+    jst = now_utc.tz_convert(JST)
+    def minutes(hhmm): h, m = map(int, hhmm.split(":")); return h * 60 + m
+    # 0〜1時台は「前日の24〜25時」として扱う
+    day = (jst - pd.Timedelta(hours=1)).normalize() if jst.hour < 1 else jst.normalize()
+    cur = (jst - day).total_seconds() / 60
+    start = minutes(cfg.get("start", "10:00"))
+    for ex in cfg.get("extra", []):
+        if ex.get("date") == f"{day:%Y-%m-%d}":
+            start = minutes(ex.get("start", cfg["start"]))
+    if start <= cur < minutes(cfg.get("end", "25:00")):
+        return True
+    if events is not None and len(events):
+        lo, hi = cfg.get("event_window_hours", [-1, 3])
+        dt = (now_utc - events).total_seconds() / 3600
+        if ((dt >= lo) & (dt <= hi)).any():
+            return True
+    return False
+
+
 def load_recent() -> pd.DataFrame:
     d = yf.download("USDJPY=X", period="120d", interval="1h", progress=False, auto_adjust=False)
     d.columns = d.columns.get_level_values(0)
@@ -84,7 +110,7 @@ def run(dry=False):
     st = json.load(open(STATE)) if os.path.exists(STATE) else {}
     msgs = []
     # 相場状態の変化
-    if st.get("regime") != state_now:
+    if st.get("regime") != state_now and (state_now == "荒れ" or awake(pd.Timestamp.now(tz="UTC"))):
         msgs.append(("info", f"相場の状態: {st.get('regime', '-')} → {state_now}",
                      f"USD/JPY {h.Close.iat[n]:.2f}。使う作戦: " + ", ".join(LABEL[s] for (s, r) in RULES if r == state_now)))
         st["regime"] = state_now
@@ -105,9 +131,14 @@ def run(dry=False):
         if r:
             side, stop, tgt, trail = r
             sigs.append((key, dict(side=side, entry=h.Close.iat[n], stop=stop, target=tgt, note=EXIT_TEXT.get(trail, "損切りか利確まで保有"))))
+    is_awake = awake(pd.Timestamp.now(tz="UTC"), rg.st.events(h.index[-200:]))
     for key, s in sigs:
         sig_id = f"{key}-{t:%Y%m%d%H}"
         if sig_id in st.get("sent", []):
+            continue
+        if not is_awake and key not in URGENT:
+            print(f"(時間外のため送らない) {LABEL[key]}")
+            st.setdefault("sent", []).append(sig_id)
             continue
         risk = RULES[(key, state_now)]
         units, loss = size(s["entry"], s["stop"], risk)
