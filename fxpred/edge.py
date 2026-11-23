@@ -58,17 +58,24 @@ def no_trade(h: pd.DataFrame, now: pd.Timestamp, regime: str, tf_trends: dict, a
     return why
 
 
-# 信頼度 (0〜100) の配点。検証で裏付けのある条件ほど重くする。合計100。
+# 信頼度 (0〜100) の配点。2024-26年のリプレイ検証で、前半だけを使って決め、後半で効果を確認したもの:
+#   重要な価格帯の近く → 前半・後半とも成績が良い (+30)
+#   時間足の方向がそろっている → 前半・後半とも成績が悪い (動ききった後の飛び乗りになりやすい) (-15)
+#   AIモデルの確率が同じ向き → 前半・後半とも成績が悪い (-10)
+#   市場心理・相場状態・まとめ役の賛否 → 前半と後半で効果が逆。点数には入れず、通知の理由・注意として表示だけする
 # 自己改善で journal/learning.json の "cond_weights" に上書きされることがある
-COND_WEIGHTS = {"時間足": 20, "価格帯": 20, "AIモデル": 5, "市場心理": 10, "相場状態": 10, "作戦シグナル": 35}
-SEND_AT, HIGH_AT = 55, 75   # この点数以上で通知 / 高確度
+COND_WEIGHTS = {"作戦シグナル": 45, "価格帯": 30, "時間足": -15, "AIモデル": -10, "市場心理": 0, "相場状態": 0}
+BASE = 25
+SEND_AT, HIGH_AT = 65, 80   # 毎時の分析: この点数以上で通知 / 高確度 (リプレイで55〜64%の帯は前半マイナスのため65に)
+SEND_AT_QUICK = 55          # 5分監視 (下値・上値での反発確認): リプレイで55以上の通知が見送りより成績が良かった
 
 
 def confidence(ok: list[str], coord_agree: int = 0, penalties: int = 0, weights: dict | None = None) -> int:
-    """そろった条件の配点の合計 + まとめ役の賛否 (±10) - 警戒事項 (1つ10点)。0〜100"""
+    """基本点 + そろった条件の配点 - 警戒事項 (1つ10点)。0〜100。
+    まとめ役の賛否は検証で効果が一定しなかったため点数に入れない (引数は互換のため残す)"""
     w = weights or COND_WEIGHTS
-    pts = sum(v for k, v in w.items() if any(x.startswith(k) for x in ok))
-    return int(np.clip(pts + 10 * coord_agree - 10 * penalties, 0, 100))
+    pts = BASE + sum(v for k, v in w.items() if any(x.startswith(k) for x in ok))
+    return int(np.clip(pts - 10 * penalties, 0, 100))
 
 
 def confluence(side: int, tf_trends: dict, near_level: str | None, p_up: float, vix_change: float | None,

@@ -3,7 +3,7 @@
   集計: 送ったシグナルの勝率・損益 (pips)、信頼度の帯ごとの成績、送らなかったシグナルの「もし入っていたら」の成績、
         毎朝の予想の当たり (方向・値幅・大きなずれ)
   調整: 件数が十分ある時だけ、小さく動かす。調整は journal/learning.json に保存し、監視がそのまま使う
-    週次 … 通知の基準点 (send_at) を ±5 点だけ動かせる (範囲 45〜75)
+    週次 … 毎時の分析の通知の基準点 (send_at) を ±5 点だけ動かせる (範囲 55〜85)
     月次 … 条件ごとの配点 (cond_weights) を、成績の良い条件は +5・悪い条件は -5 (各 0〜45、合計100に正規化)
 """
 import json
@@ -79,11 +79,11 @@ def review(h: pd.DataFrame, days: int, monthly: bool) -> tuple[str, str]:
     send_at = learn.get("send_at", edge.SEND_AT)
     low = done[done.confidence < send_at + 10] if len(done) else done
     if len(low) >= 8 and low.pips.sum() < 0:
-        learn["send_at"] = min(75, send_at + 5)
+        learn["send_at"] = min(85, send_at + 5)
         changes.append(f"基準ぎりぎりの通知がマイナス ({_stats(low)}) → 通知の基準を {send_at}% → {learn['send_at']}% に上げる")
     near = sk[sk.confidence >= send_at - 10] if len(sk) else sk
     if len(near) >= 8 and near.pips.sum() > 0 and (near.pips > 0).mean() >= 0.5:
-        learn["send_at"] = max(45, send_at - 5)
+        learn["send_at"] = max(55, send_at - 5)
         changes.append(f"見送ったシグナルがプラス ({_stats(near)}) → 通知の基準を {send_at}% → {learn['send_at']}% に下げる")
     if monthly and len(done) >= 20:
         w = dict(learn.get("cond_weights") or edge.COND_WEIGHTS)
@@ -92,10 +92,9 @@ def review(h: pd.DataFrame, days: int, monthly: bool) -> tuple[str, str]:
             not_ = done[~done.conditions.fillna("").str.contains(cond)]
             if len(has) >= 10 and len(not_) >= 10:
                 diff = has.pips.mean() - not_.pips.mean()
-                if diff > 3: w[cond] = min(45, w[cond] + 5); changes.append(f"「{cond}」がそろった時の成績が良い ({diff:+.1f}pips) → 配点+5")
-                if diff < -3: w[cond] = max(0, w[cond] - 5); changes.append(f"「{cond}」がそろっても成績が悪い ({diff:+.1f}pips) → 配点-5")
-        tot = sum(w.values()) or 1
-        learn["cond_weights"] = {k: round(v * 100 / tot) for k, v in w.items()}
+                if diff > 3: w[cond] = min(60, w[cond] + 5); changes.append(f"「{cond}」がそろった時の成績が良い ({diff:+.1f}pips) → 配点+5")
+                if diff < -3: w[cond] = max(-30, w[cond] - 5); changes.append(f"「{cond}」がそろっても成績が悪い ({diff:+.1f}pips) → 配点-5")
+        learn["cond_weights"] = w
     if not changes:
         need = "20回以上 (月次)" if monthly else "8回以上"
         changes.append(f"変更なし (判断に必要な件数 {need} に届いていない、または成績に偏りがない)")

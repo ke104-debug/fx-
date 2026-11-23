@@ -178,12 +178,12 @@ def quick_chance(trigger, price):
     stop_why = edge.no_trade(h, now, state_now, ctx["tf"], anom) if kind != "rebound" else []
     serious = [w for w in stop_why if w.startswith(("重要指標", "急変の最中", "週末"))]
     score = edge.confidence(ok, agree, len(stop_why), learn.get("cond_weights"))
-    send_at = learn.get("send_at", edge.SEND_AT)
+    send_at = learn.get("send_at_quick", edge.SEND_AT_QUICK)
     key = "S" if kind == "rebound" else "H4"
     log_signal(now.floor("min"), key, {"side": side, "entry": price, "stop": stop, "target": tgt}, score,
-               "見送り" if serious else "買い" if side == 1 else "売り", sent=score >= send_at and agree >= 0,
+               "見送り" if serious else "買い" if side == 1 else "売り", sent=score >= send_at,
                conditions="|".join(x.split(" ")[0] for x in ok))
-    if score < send_at or agree < 0:
+    if score < send_at:
         print(f"(簡易監視の候補 {why}: 信頼度{score}で見送り)")
         return None
     reasons = [why] + [x for x in ok if not x.startswith(("相場状態", "価格帯"))]
@@ -267,7 +267,7 @@ def run(dry=False):
         title, body = fmt.signal(s["side"], s["entry"], s["stop"], s.get("target"), score, reasons, cautions,
                                  f"{t.tz_convert(JST):%m/%d %H:%M} から{valid}", serious)
         send_at = learn.get("send_at", edge.SEND_AT)
-        skip = (score < send_at or agree < 0) and key not in URGENT
+        skip = score < send_at and key not in URGENT
         log_signal(t, key, s, score, verdict, sent=not skip, conditions="|".join(x.split(" ")[0] for x in ok))
         if skip:
             print(f"(チャンスと判断しないため送らない: 信頼度{score}{'、担当AIと逆向き' if agree < 0 else ''}) {LABEL[key]}")
