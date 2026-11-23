@@ -34,10 +34,19 @@ def anomaly(h: pd.DataFrame) -> dict | None:
 def no_trade(h: pd.DataFrame, now: pd.Timestamp, regime: str, tf_trends: dict, anom: dict) -> list[str]:
     """取引を見送るべき理由のリスト (空なら問題なし)"""
     why = []
-    ev = st.events(h.index[-50:].append(pd.DatetimeIndex([now + timedelta(days=10)])))
-    nxt = ev[ev > now]
-    if len(nxt) and (nxt[0] - now) <= timedelta(hours=6):
-        why.append(f"重要指標 (FOMC/米雇用統計) まで{(nxt[0] - now).total_seconds() / 3600:.0f}時間")
+    from . import calendar as cal
+    live = now > pd.Timestamp.now(tz="UTC") - timedelta(days=6)   # カレンダーは今週分だけなので、過去の検証では使わない
+    hi = cal.upcoming(now, 6, ("High",)) if live else []
+    if hi:
+        e = hi[0]
+        why.append(f"重要指標 {e['emoji']} {e['title']} まで{(e['time'] - now).total_seconds() / 3600:.0f}時間 (日本時間 {e['time'].tz_convert('Asia/Tokyo'):%H:%M})")
+    elif live and (md := cal.upcoming(now, 1, ("Medium",))):
+        why.append(f"指標 {md[0]['emoji']} {md[0]['title']} まで1時間以内")
+    else:
+        ev = st.events(h.index[-50:].append(pd.DatetimeIndex([now + timedelta(days=10)])))
+        nxt = ev[ev > now]
+        if len(nxt) and (nxt[0] - now) <= timedelta(hours=6):
+            why.append(f"重要指標 (FOMC/米雇用統計) まで{(nxt[0] - now).total_seconds() / 3600:.0f}時間")
     jst = now.tz_convert("Asia/Tokyo")
     if f"{jst:%Y-%m-%d}" in JP_HOLIDAYS_2026 and jst.hour < 16:
         why.append("日本の祝日で東京時間の取引が薄い")

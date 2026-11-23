@@ -50,6 +50,12 @@ def awake(now_utc: pd.Timestamp, events=None) -> bool:
             start = minutes(ex.get("start", cfg["start"]))
     if start <= cur < minutes(cfg.get("end", "25:00")):
         return True
+    try:   # Forex Factory の 🔴 重要指標の前後も起きている扱い
+        from . import calendar as cal
+        hi_ev = pd.DatetimeIndex([e["time"] for e in cal.events(("High",))])
+        events = hi_ev if events is None else events.append(hi_ev)
+    except Exception:
+        pass
     if events is not None and len(events):
         lo, hi = cfg.get("event_window_hours", [-1, 3])
         dt = (now_utc - events).total_seconds() / 3600

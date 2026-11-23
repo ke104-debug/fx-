@@ -200,10 +200,15 @@ def morning_message(h: pd.DataFrame, a: dict, fc: dict, reviews: list[dict], lea
         conf = 0
     lines += [f"**信頼度　: {conf}%**　予想値幅 {fc['exp_low']:.2f}〜{fc['exp_high']:.2f}",
               f"現在 {c:.2f}　下値 {sup:.2f} / 上値 {res:.2f}　相場: {a['regime']}"]
-    ev = [e for e in rg.st.events(h.index[-50:].append(pd.DatetimeIndex([h.index[-1] + timedelta(days=2)])))
-          if timedelta(0) < e - h.index[-1] <= timedelta(hours=24)]
-    if ev:
-        lines.append("重要指標: " + "、".join(f"{e.tz_convert(JST):%H:%M}" for e in ev))
+    try:
+        from . import calendar as cal
+        evs = cal.upcoming(pd.Timestamp.now(tz="UTC"), 24, ("High", "Medium"))
+    except Exception:
+        evs = []
+    if evs:
+        lines += ["今日の指標 (Forex Factory: 🔴重要 🟠中)"] + ["・" + cal.fmt(e) for e in evs[:6]]
+    else:
+        lines.append("今日の指標: 🔴🟠 の発表なし")
     lines += ["━━━━━━━━━━", "担当AIの見立て",
               f"・トレンド: {v['トレンド担当'].get('direction', '')} / {v['トレンド担当'].get('status', '')}",
               f"・レンジ: {v['レンジ担当']['lines'][-1]}",

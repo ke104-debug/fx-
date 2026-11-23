@@ -3,7 +3,7 @@ name: AI_FX 5分監視
 # 信頼度が基準以上なら通知 (活動時間内)。普段は何も送らず数十秒で終わる。公開リポジトリのため無料。
 on:
   schedule:
-    - cron: "*/5 * * * 0-5"   # GitHub の混雑で数分遅れたり、まれに飛ばされることがあります
+    - cron: "3-58/5 * * * 0-5"   # 0分ちょうどの混雑を避けて 3,8,13…分に。GitHub の混雑で遅れたり飛ばされることがあります
   workflow_dispatch: {}
 permissions:
   contents: write

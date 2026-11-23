@@ -76,10 +76,19 @@ def find_cause(start_epoch: int, direction: int) -> list[dict]:
         return []
 
 
-def cause_text(causes: list[dict]) -> str:
+def cause_text(causes: list[dict], start_epoch: int | None = None) -> str:
+    ev_lines = []
+    if start_epoch:
+        try:
+            import pandas as pd
+            from . import calendar as cal
+            ev_lines = [cal.fmt(e) for e in cal.near(pd.Timestamp(start_epoch, unit="s", tz="UTC"), 20)]
+        except Exception:
+            pass
+    head = (["同じ時刻に発表された指標 (Forex Factory)"] + ["・" + x for x in ev_lines] + [""]) if ev_lines else []
     if not causes:
-        return "原因: まだ関連ニュースが見つかりません (見つかれば続報を送ります)"
-    lines = ["考えられる原因 (ニュースの見出しから推定)"]
+        return "\n".join(head + ["原因: まだ関連ニュースが見つかりません (見つかれば続報を送ります)"])
+    lines = head + ["考えられる原因 (ニュースの見出しから推定)"]
     for x in causes:
         lines.append(f"・{x['time'].tz_convert('Asia/Tokyo'):%H:%M} {x['title'][:80]}")
     cats = sorted({c for x in causes for c in x["cats"]})
@@ -112,7 +121,7 @@ def run(dry=False):
             causes = find_cause(now - k * 60, 1 if mv > 0 else -1)
             body = (f"**{k}分で {mv:+.2f}円**（普段の{z:.1f}倍）\n"
                     f"60分: {moves.get(60, (0, 0))[0]:+.2f}円 / 15分: {moves.get(15, (0, 0))[0]:+.2f}円\n"
-                    "━━━━━━━━━━\n" + cause_text(causes) +
+                    "━━━━━━━━━━\n" + cause_text(causes, now - k * 60) +
                     "\n━━━━━━━━━━\n今は入らないでください。\n下げ止まり・上げ止まりをAIが確認したら、売買の判断を通知します。")
             if not causes:
                 st["cause_pending"] = {"start": now - k * 60, "dir": 1 if mv > 0 else -1, "until": now + 1800, "label": direction}
@@ -127,7 +136,7 @@ def run(dry=False):
         else:
             causes = find_cause(cp["start"], cp["dir"])
             if causes:
-                out.append((f"📰 {cp['label']}の原因 (続報)", cause_text(causes), 3447003))
+                out.append((f"📰 {cp['label']}の原因 (続報)", cause_text(causes, cp["start"]), 3447003))
                 st.pop("cause_pending", None)
     # 2) チャンスの候補 → AI の詳しい分析へ
     trigger = None
