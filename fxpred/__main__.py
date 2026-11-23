@@ -6,6 +6,7 @@
   python -m fxpred snapshot                        # Web ページ用に USD/JPY のテクニカル予想とシステム状況を JSON で出す
   python -m fxpred strategies [コストpips]           # 売買作戦 (レンジ逆張り等) を1時間足2.8年で検証
   python -m fxpred portfolio                       # 複数作戦で100万円を運用した想定のシミュレーション
+  python -m fxpred scan [--dry]                    # 相場状態を判定し、作戦のシグナルが出た時だけ Discord に通知
   python -m fxpred study                           # 日足(2004年〜)でテクニカル/マクロの効き目を検証
 """
 import json
@@ -35,6 +36,9 @@ def main(argv):
     elif cmd == "portfolio":
         from . import portfolio
         portfolio.run()
+    elif cmd == "scan":
+        from . import scan
+        scan.run(dry="--dry" in args)
     elif cmd == "study":
         from . import daily
         daily.run()
