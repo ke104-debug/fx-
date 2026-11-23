@@ -97,6 +97,25 @@ def h_pullback(d, i):
     if r.ema50 < r.ema200 and r.Close < r.ema200 and r.rsi > 65: return -1, r.Close + 1.5 * r.atr, None, "chandelier"
 
 
+def session_break(d, i, rng_h=(0, 6), trade_h=(7, 11), wmin=15, wmax=60, rr=2, close_h=20):
+    """あるセッションの値幅を、次のセッションで抜けた方向へ。反対側で損切り、rr倍で利確、close_h時(UTC)に手仕舞い"""
+    t = d.index[i]
+    if not (trade_h[0] <= t.hour <= trade_h[1]): return None
+    day = d[(d.index >= t.normalize() + pd.Timedelta(hours=rng_h[0])) & (d.index < t.normalize() + pd.Timedelta(hours=rng_h[1]))]
+    if len(day) < (rng_h[1] - rng_h[0]) - 1: return None
+    hi, lo = day.High.max(), day.Low.min()
+    w = (hi - lo) / PIP
+    if not (wmin <= w <= wmax): return None
+    r, p = d.iloc[i], d.iloc[i - 1]
+    if r.Close > hi and p.Close <= hi: return 1, lo, r.Close + rr * (r.Close - lo), f"eod{close_h}"
+    if r.Close < lo and p.Close >= lo: return -1, hi, r.Close - rr * (hi - r.Close), f"eod{close_h}"
+
+
+def h_london_ny(d, i):
+    """ロンドン時間 (7-12時UTC) の値幅を、NY 時間の始まり (12-15時UTC) に抜けた方向へ"""
+    return session_break(d, i, rng_h=(7, 12), trade_h=(12, 15), wmin=20, wmax=80, rr=2, close_h=21)
+
+
 def h_tokyo_break(d, i):
     """東京時間 (0-6時UTC) の値幅を、ロンドン時間 (7-11時UTC) に抜けた方向へ。反対側で損切り、2倍で利確"""
     t = d.index[i]
@@ -128,7 +147,7 @@ def h_event_momo(d, i):
 
 HOURLY = {"H1 ブレイクアウト(5日高安値)": h_breakout, "H2 押し目買い/戻り売り": h_pullback,
           "H3 東京レンジのロンドン抜け": h_tokyo_break, "H4 レンジ逆張り+流れフィルタ": h_range_trend,
-          "H5 指標発表直後の順張り": h_event_momo}
+          "H5 指標発表直後の順張り": h_event_momo, "H6 ロンドンレンジのNY抜け": h_london_ny}
 
 
 def run_hourly(d, rule, risk=0.01, cost_pips=0.5, diff=None, max_hold=240):
@@ -164,13 +183,15 @@ def run_hourly(d, rule, risk=0.01, cost_pips=0.5, diff=None, max_hold=240):
             if trail == "chandelier":
                 stop = max(stop, C[k] - 3 * ATR[k]) if side == 1 else min(stop, C[k] + 3 * ATR[k])
             if trail == "eod" and d.index[k].hour >= 20: px, why = C[k], "当日手仕舞い"; break
+            if trail and trail.startswith("eod") and trail != "eod" and d.index[k].hour >= int(trail[3:]): px, why = C[k], "当日手仕舞い"; break
             if trail == "24h" and k - j >= 24: px, why = C[k], "1日経過"; break
         if px is None: px, why = C[k], "時間切れ"
         hours = k - j + 1
         sw = swap_yen(side * units, e, diff.iat[j] if diff is not None else 0, hours / 24) if diff is not None else 0
         pnl = side * units * (px - e) - units * cost_pips * PIP + sw
         eq += pnl
-        trades.append(dict(entry=d.index[j], exit=d.index[k], side=side, pnl=pnl, why=why, r=pnl / (eq - pnl) / risk))
+        trades.append(dict(entry=d.index[j], exit=d.index[k], side=side, pnl=pnl, why=why, r=pnl / (eq - pnl) / risk,
+                           R=(side * (px - e) - cost_pips * PIP) / dist, dist=dist, price=e))
         curve.extend([eq] * (k - i)); curve_idx.extend(d.index[i:k]); i = k
     return pd.Series(curve, curve_idx), pd.DataFrame(trades)
 
