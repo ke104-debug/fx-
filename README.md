@@ -110,3 +110,9 @@ H3+H4+H5 を同時に使い3%なら +71% (最大下落40%)。ロンドンレン�
 - 必要な設定: リポジトリの Settings → Secrets and variables → Actions → New repository secret で `DISCORD_WEBHOOK_URL`
 - 通知時間は `config/notify.json` (通常 10:00〜25:00、急変は時間外でも)
 - 手動実行: Actions タブ → 「AI_FX 自動運用」→ Run workflow (朝の予想も試すならチェックを入れる)
+
+## 週次・月次の見直し (`fxpred/periodic.py`)
+- 毎週土曜10時 (日本時間): 1週間の「送ったシグナル」「見送ったシグナル (もし入っていたら)」「信頼度の帯ごとの成績」「毎朝の予想の当たり」を集計して Discord に送る
+- 毎月最初の土曜10時: 同じ内容を1か月分で集計し、条件ごとの配点も見直す
+- 調整は件数が十分ある時だけ小さく: 週次は通知の基準点を±5 (8回以上、範囲45〜75%)、月次は条件の配点を±5 (20回以上)。履歴は `journal/learning.json`
+- 手動: `python -m fxpred auto --weekly` (月次も: `--weekly --monthly`)

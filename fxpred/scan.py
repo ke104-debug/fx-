@@ -117,11 +117,12 @@ def shock_alert(h: pd.DataFrame, drop=2.0):
     return None
 
 
-def log_signal(t, key, s, conf, verdict):
-    """送ったシグナルを journal/signals.csv に記録 (毎朝の振り返りで結果を確認する)"""
+def log_signal(t, key, s, conf, verdict, sent=True, conditions=""):
+    """シグナルを journal/signals.csv に記録 (送らなかったものも。週次・月次の見直しで「見送りが正しかったか」も確かめる)"""
     path = os.path.join(os.path.dirname(__file__), "..", "journal", "signals.csv")
     row = {"time_utc": f"{t:%Y-%m-%d %H:%M}", "strategy": LABEL[key], "side": s["side"], "entry": round(s["entry"], 3),
-           "stop": round(s["stop"], 3), "target": round(s["target"], 3) if s.get("target") else "", "confidence": conf, "verdict": verdict}
+           "stop": round(s["stop"], 3), "target": round(s["target"], 3) if s.get("target") else "", "confidence": conf, "verdict": verdict,
+           "key": key, "sent": sent, "conditions": conditions}
     os.makedirs(os.path.dirname(path), exist_ok=True)
     pd.DataFrame([row]).to_csv(path, mode="a", header=not os.path.exists(path), index=False)
 
@@ -216,8 +217,10 @@ def run(dry=False):
         valid = EXIT_VALID.get(key, "48時間")
         title, body = fmt.signal(s["side"], s["entry"], s["stop"], s.get("target"), score, reasons, cautions,
                                  f"{t.tz_convert(JST):%m/%d %H:%M} から{valid}", serious)
-        log_signal(t, key, s, score, verdict)
-        if (score < edge.SEND_AT or agree < 0) and key not in URGENT:
+        send_at = learn.get("send_at", edge.SEND_AT)
+        skip = (score < send_at or agree < 0) and key not in URGENT
+        log_signal(t, key, s, score, verdict, sent=not skip, conditions="|".join(x.split(" ")[0] for x in ok))
+        if skip:
             print(f"(チャンスと判断しないため送らない: 信頼度{score}{'、担当AIと逆向き' if agree < 0 else ''}) {LABEL[key]}")
             st.setdefault("sent", []).append(sig_id)
             continue

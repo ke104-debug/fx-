@@ -16,7 +16,7 @@ import sys
 from . import backtest, data, diagnose, features
 
 
-def main(argv):
+def main(argv):  # noqa: C901
     cmd, args = (argv[0] if argv else ""), argv[1:]
     if cmd == "diagnose":
         print(json.dumps(diagnose.run(args or None), ensure_ascii=False, indent=1))
@@ -53,6 +53,15 @@ def main(argv):
         now = pd.Timestamp.now(tz="Asia/Tokyo")
         path = os.getenv("FX_SCAN_STATE", "state/scan.json")
         st = json.load(open(path)) if os.path.exists(path) else {}
+        if now.weekday() == 5 and now.hour == 10 and st.get("weekly_done") != f"{now:%Y-%m-%d}" or "--weekly" in args:
+            from . import periodic
+            periodic.run(monthly=now.day <= 7 or "--monthly" in args)   # 毎月最初の土曜は月次も
+            st = json.load(open(path)) if os.path.exists(path) else {}
+            st["weekly_done"] = f"{now:%Y-%m-%d}"
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            json.dump(st, open(path, "w"), ensure_ascii=False, indent=1)
+            if now.weekday() == 5:
+                return
         if now.hour == 10 and st.get("morning_done") != f"{now:%Y-%m-%d}" and now.weekday() < 5 or "--morning" in args:
             dailyplan.run()
             st = json.load(open(path)) if os.path.exists(path) else {}

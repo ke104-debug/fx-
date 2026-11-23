@@ -4,6 +4,7 @@ name: AI_FX 自動運用
 on:
   schedule:
     - cron: "5 * * * 0-5"   # 毎時5分 (UTC 日〜金)。GitHub の混雑で数分〜十数分遅れることがあります
+    - cron: "5 1 * * 6"     # 土曜 10:05 (日本時間): 週次の見直し (毎月最初の土曜は月次も)
   workflow_dispatch:
     inputs:
       morning:
