@@ -46,6 +46,26 @@ def check(bars):
     return c, sd, moves, worst, shock
 
 
+def to5m(bars, n=4):
+    """1分足から、確定済みの5分足を直近 n 本作る (時刻が5分の倍数で区切る)"""
+    groups = {}
+    for t, o, h, l, c in bars[-(n + 1) * 5 - 5:]:
+        groups.setdefault(t // 300, []).append((o, h, l, c))
+    keys = sorted(groups)[:-1]          # 最後の (まだ確定していない) 5分足は使わない
+    return [(groups[k][0][0], max(x[1] for x in groups[k]), min(x[2] for x in groups[k]), groups[k][-1][3]) for k in keys][-n:]
+
+
+def confirmed(bars, side, lvl):
+    """下値 (上値) に触れた後、5分足が陽線 (陰線) で戻したか。検証 (直近12週) で、すぐ入るより成績が良かった入り方"""
+    b = to5m(bars, 3)
+    if len(b) < 3:
+        return False
+    touched = min(x[2] for x in b) <= lvl + 0.05 if side == 1 else max(x[1] for x in b) >= lvl - 0.05
+    o, h, l, c = b[-1]
+    turned = (c > o and c > b[-2][3]) if side == 1 else (c < o and c < b[-2][3])
+    return touched and turned
+
+
 def run(dry=False):
     from . import notify
     t0 = time.time()
@@ -74,8 +94,11 @@ def run(dry=False):
     trigger = None
     if lv:
         sup, res = lv.get("support"), lv.get("resistance")
-        if sup and abs(c - sup) <= 0.10: trigger = ("near_support", sup)
-        elif res and abs(c - res) <= 0.10: trigger = ("near_resistance", res)
+        # 下値・上値に近づき、さらに5分足で反発 (反落) を確認できた時だけ AI の詳しい分析へ
+        if sup and abs(c - sup) <= 0.10:
+            trigger = ("near_support", sup) if confirmed(bars, 1, sup) else ("wait", sup)
+        elif res and abs(c - res) <= 0.10:
+            trigger = ("near_resistance", res) if confirmed(bars, -1, res) else ("wait", res)
     pr = st.get("pending_rebound")
     if pr and now - pr["t"] < 6 * 3600:
         last5 = bars[-5:]
@@ -83,7 +106,9 @@ def run(dry=False):
         moved_on = (c - pr["extreme"]) * (1 if pr["dir"] == "急落" else -1)
         if turned and moved_on > 0.05:
             trigger = ("rebound", pr["extreme"])
-    if trigger and now - st.get("chance_t", {}).get(trigger[0], 0) > 3600:
+    if trigger and trigger[0] == "wait":
+        print(f"下値・上値 {trigger[1]:.2f} 付近。5分足での反発確認待ち")
+    elif trigger and now - st.get("chance_t", {}).get(trigger[0], 0) > 3600:
         st.setdefault("chance_t", {})[trigger[0]] = now
         try:
             from . import scan

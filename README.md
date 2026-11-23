@@ -121,3 +121,7 @@ H3+H4+H5 を同時に使い3%なら +71% (最大下落40%)。ロンドンレン�
 - `.github/workflows/fx-quick.yml`: 5分ごとに `python -m fxpred.quick`。急変は時間外でも通知、チャンスの候補は AI の詳しい分析を経て通知
 - `.github/workflows/duka-download.yml`: 手動実行。Dukascopy の1時間足を最大5時間かけて取得し `data-duka` ブランチに保存 (何度でも続きから)
 - 記録 (`journal/`) は git に、監視の状態 (`state/`) は Actions のキャッシュに保存
+
+## 5分足での反発確認 (5分監視に採用)
+下値・上値に近づいただけでは入らず、5分足が陽線 (上値なら陰線) で戻したのを確認してから AI の詳しい分析に回す (`fxpred/quick.py` の `confirmed`)。
+直近12週 (Yahoo 5分足、2026-09〜11) の検証: すぐ入る 142回 勝率31% -171pips → 反発確認後 128回 勝率31% +108pips。
