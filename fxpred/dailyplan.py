@@ -186,23 +186,13 @@ def morning_message(h: pd.DataFrame, a: dict, fc: dict, reviews: list[dict], lea
     v = a["views"]
     sup, res, c = fc["support"], fc["resistance"], fc["price"]
     lines = []
-    if fc["verdict"] == "買い寄り":
-        e = sup + 0.05; plan = ("買い", e, sup - 0.20, res - 0.10)
-    elif fc["verdict"] == "売り寄り":
-        e = res - 0.05; plan = ("売り", e, res + 0.20, sup + 0.10)
-    else:
-        plan = None
-    if plan:
-        word, e, stop, tgt = plan
-        side = 1 if word == "買い" else -1
-        lines += [f"**判断　　: {word}（{'下値' if word == '買い' else '上値'}まで待つ）**",
-                  f"**エントリー: {e - 0.05:.2f} 〜 {e + 0.05:.2f}**",
-                  f"**損切り　: {stop:.2f}**（{fmt.pips(e, stop, side):+d} pips）",
-                  f"**利確　　: {tgt:.2f}**（{fmt.pips(e, tgt, side):+d} pips）"]
-    else:
-        lines += ["**判断　　: 様子見**（方向感なし。チャンスが来たら別途通知）",
-                  f"**買うなら: {sup:.2f} 付近で反発確認 / 損切り {sup - 0.20:.2f} / 利確 {res - 0.10:.2f}**",
-                  f"**売るなら: {res:.2f} 付近で反落確認 / 損切り {res + 0.20:.2f} / 利確 {sup + 0.10:.2f}**"]
+    # 朝の方向判断 (買い寄り/売り寄り) は検証で正解率が低かった (125日中、方向を言った16日で25%) ため出さない。
+    # 代わりに、買う場合・売る場合それぞれの位置と損切り・利確を示し、実際のチャンスは監視が見つけて通知する
+    plan = None
+    lines += ["**判断　　: 様子見で待つ**（方向の予想は精度が低いため出しません。チャンスは監視が通知）",
+              f"**買うなら: {sup:.2f} 付近で反発確認 / 損切り {sup - 0.20:.2f} / 利確 {res - 0.10:.2f}**",
+              f"**売るなら: {res:.2f} 付近で反落確認 / 損切り {res + 0.20:.2f} / 利確 {sup + 0.10:.2f}**",
+              f"担当AIの見立て (参考): {fc['verdict']}"]
     # 信頼度は売買シグナルと同じ計算 (条件の一致度)。様子見の日は「買い・売りどちらも条件がそろっていない」ことを示す
     from . import edge, scan
     try:
@@ -218,7 +208,7 @@ def morning_message(h: pd.DataFrame, a: dict, fc: dict, reviews: list[dict], lea
         conf = best
     except Exception:
         conf = 0
-    lines += [f"**信頼度　: {conf}%**　予想値幅 {fc['exp_low']:.2f}〜{fc['exp_high']:.2f}",
+    lines += [(f"**信頼度　: {conf}%**　" if plan else "") + f"予想値幅 {fc['exp_low']:.2f}〜{fc['exp_high']:.2f}",
               f"現在 {c:.2f}　下値 {sup:.2f} / 上値 {res:.2f}　相場: {a['regime']}"]
     try:
         from . import calendar as cal
@@ -252,7 +242,9 @@ def morning_message(h: pd.DataFrame, a: dict, fc: dict, reviews: list[dict], lea
         pass
     lines.append("※AIの予想であり利益を保証しません")
     word = plan[0] if plan else "様子見"
-    return f"{'🟢' if word == '買い' else '🔴' if word == '売り' else '⚪'} 今日のUSD/JPY: {word} 信頼度 {conf}%", "\n".join(lines)
+    title = (f"{'🟢' if word == '買い' else '🔴'} 今日のUSD/JPY: {word} 信頼度 {conf}%" if plan
+             else f"⚪ 今日のUSD/JPY: 様子見 (下値 {sup:.2f} / 上値 {res:.2f} で待つ)")
+    return title, "\n".join(lines)
 
 
 def run(dry=False):
