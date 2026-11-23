@@ -66,6 +66,16 @@ def review(h: pd.DataFrame, days: int, monthly: bool) -> tuple[str, str]:
         b = pd.cut(sent.confidence, [0, 64, 74, 100], labels=["55〜64%", "65〜74%", "75%以上"])
         for lab, g in sent.groupby(b, observed=True):
             lines.append(f"・信頼度{lab}: {_stats(g)}")
+    # 影の運用 (通知していない新しい作戦) の成績
+    try:
+        from . import lab, shadow
+        d = lab.prep(h.iloc[-(days * 24 + 900):])
+        for name, c in shadow.CANDIDATES.items():
+            t = c["fn"](d, **c["params"])
+            t = t[t.time >= since]
+            lines.append(f"影の運用「{name}」: " + (f"{len(t)}回 勝率{(t.pips > 0).mean():.0%} 合計{t.pips.sum():+.0f}pips 平均{t.pips.mean():+.1f}" if len(t) else "0回"))
+    except Exception as e:
+        lines.append(f"影の運用: 集計できず ({e})")
     # 毎朝の予想
     if os.path.exists(dp.REVIEW):
         rv = pd.read_csv(dp.REVIEW)

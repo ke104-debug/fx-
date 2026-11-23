@@ -56,6 +56,7 @@ jobs:
         run: |
           python -m fxpred.research --apply > research.txt
           python -m fxpred.ta_study > /dev/null
+          python -m fxpred.lab > /dev/null
           python -c "from fxpred import notify; t=open('research.txt').read(); notify.send('🔬 精度向上の研究の結果', t[-3500:] + '\n詳細: reports/research.md', color=3447003)"
           git add reports config && (git diff --cached --quiet || git commit -qm "研究レポートを更新 (効果が確かめられたフィルター変更を反映)") && git pull --rebase -q && git push -q
         env:

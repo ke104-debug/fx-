@@ -318,6 +318,12 @@ def run(dry=False):
                    "trend_up": bool(h.trend_up.iat[n]), "time": f"{t:%Y-%m-%d %H:%M}"}, open(lv_path, "w"), ensure_ascii=False)
     except Exception:
         pass
+    try:   # 影の運用 (通知しない新しい作戦の記録)
+        from . import shadow
+        for x in shadow.check(h):
+            print(f"(影の運用) {x['strategy']} {'買い' if x['side'] == 1 else '売り'} {x['entry']}")
+    except Exception as e:
+        print("影の運用のエラー:", e)
     st["last_run"] = datetime.now(timezone.utc).isoformat(timespec="minutes")
     st["last_bar"] = f"{t:%Y-%m-%d %H:%M}"
     st["price"] = round(float(h.Close.iat[n]), 3)
