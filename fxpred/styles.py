@@ -155,7 +155,7 @@ def breakout_mtf(h, d, n=48, touches=2):
 def build_all(h) -> pd.DataFrame:
     d = lab.prep(h)
     a = pd.read_pickle("reports/_signals_all.pkl")
-    win = lambda t: t[((t.time + pd.Timedelta(hours=10)).dt.hour >= 10) | ((t.time + pd.Timedelta(hours=10)).dt.hour < 1)]
+    win = lambda t: t[((t.time + pd.Timedelta(hours=9)).dt.hour >= 10) | ((t.time + pd.Timedelta(hours=9)).dt.hour < 1)]
     parts = []
     # 既存: E (安定), E2 (損小利大), 指標直後
     for name, kw in (("①低リスク(E)", dict(z_th=3.5)), ("②損小多利(E2)", dict(z_th=4, skip_mf=False, stop_atr=1.0, tgt_atr=4.0))):
