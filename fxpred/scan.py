@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
-from . import edge, notify
+from . import edge, notify, specialists as sp
 from . import portfolio as pf
 from . import regime as rg
 
@@ -116,6 +116,15 @@ def shock_alert(h: pd.DataFrame, drop=2.0):
     return None
 
 
+def log_signal(t, key, s, conf, verdict):
+    """送ったシグナルを journal/signals.csv に記録 (毎朝の振り返りで結果を確認する)"""
+    path = os.path.join(os.path.dirname(__file__), "..", "journal", "signals.csv")
+    row = {"time_utc": f"{t:%Y-%m-%d %H:%M}", "strategy": LABEL[key], "side": s["side"], "entry": round(s["entry"], 3),
+           "stop": round(s["stop"], 3), "target": round(s["target"], 3) if s.get("target") else "", "confidence": conf, "verdict": verdict}
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    pd.DataFrame([row]).to_csv(path, mode="a", header=not os.path.exists(path), index=False)
+
+
 def near_level(h: pd.DataFrame, side: int) -> str | None:
     """買いなら直近の安値 (下値)、売りなら直近の高値 (上値) の近く (0.25円以内) にいるか"""
     c = h.Close.iat[-1]
@@ -148,7 +157,8 @@ def run(dry=False):
     anom = edge.anomaly(h)
     if anom.get("level") and st.get("alert_key") != f"{anom['level']}-{t:%Y-%m-%d}" and (anom["level"] == "急変" or awake(pd.Timestamp.now(tz="UTC"))):
         msgs.append(("wait", f"{'急騰' if anom['move'] > 0 else '急落'}を検知 ({anom['level']})",
-                     f"USD/JPY {h.Close.iat[n]:.2f}円。{anom['text']}。\n"
+                     f"USD/JPY {h.Close.iat[n]:.2f}円。{anom['text']}。\n\n【急変担当の見立て】\n" +
+                     "\n".join("・" + x for x in sp.shock_view(h, anom, sp.headlines(hours=6))["lines"]) + "\n\n"
                      "まだ入らないでください。原因 (介入・指標・要人発言・リスク回避) の確認をおすすめします。\n"
                      "流れの方向へ戻る下げ止まり (上げ止まり) を確認したら、反動狙いのシグナルを送ります。"))
         st["alert_key"] = f"{anom['level']}-{t:%Y-%m-%d}"
@@ -194,6 +204,19 @@ def run(dry=False):
                 f"{s['note']}\n\n"
                 f"【警戒事項】\n" + ("\n".join("・" + x for x in stop_why) or "・特になし") + "\n\n"
                 f"足 {t.tz_convert(JST):%m/%d %H:%M} 確定時点。※過去検証の作戦であり利益を保証しません")
+        views = {"急変担当": sp.shock_view(h, anom, sp.headlines(hours=12)), "レンジ担当": sp.range_view(h, h.rsi.iat[n]),
+                 "トレンド担当": sp.trend_view(h)}
+        from .dailyplan import load_learning
+        coord = sp.coordinate(state_now, views, load_learning())
+        lead = coord["lead"]
+        body = body.replace("【売買戦略】", f"【担当AIの見立て】主担当: {lead} / まとめ役: {coord['verdict']}\n" +
+                            "\n".join("・" + x for x in views[lead]["lines"]) + "\n\n【売買戦略】")
+        against = (coord["verdict"] == "売り寄り" and s["side"] == 1) or (coord["verdict"] == "買い寄り" and s["side"] == -1)
+        log_signal(t, key, s, conf, verdict)
+        if (conf == "低" or against) and key not in URGENT:
+            print(f"(チャンスと判断しないため送らない: 信頼度{conf}{'、担当AIと逆向き' if against else ''}) {LABEL[key]}")
+            st.setdefault("sent", []).append(sig_id)
+            continue
         title = ("ノートレード推奨: " if serious else "高確度シグナル: " if conf == "高" else "売買シグナル: ") + LABEL[key]
         msgs.append(("wait" if serious else "ready", title, body))
         st.setdefault("sent", []).append(sig_id)

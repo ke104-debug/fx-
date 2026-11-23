@@ -7,6 +7,7 @@
   python -m fxpred strategies [コストpips]           # 売買作戦 (レンジ逆張り等) を1時間足2.8年で検証
   python -m fxpred portfolio                       # 複数作戦で100万円を運用した想定のシミュレーション
   python -m fxpred scan [--dry]                    # 相場状態を判定し、作戦のシグナルが出た時だけ Discord に通知
+  python -m fxpred morning [--dry]                 # 毎朝: 昨日の振り返り・自己改善・今日の予想を Discord に送る
   python -m fxpred study                           # 日足(2004年〜)でテクニカル/マクロの効き目を検証
 """
 import json
@@ -39,6 +40,9 @@ def main(argv):
     elif cmd == "scan":
         from . import scan
         scan.run(dry="--dry" in args)
+    elif cmd == "morning":
+        from . import dailyplan
+        dailyplan.run(dry="--dry" in args)
     elif cmd == "study":
         from . import daily
         daily.run()
