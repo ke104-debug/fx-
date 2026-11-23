@@ -66,6 +66,29 @@ def confirmed(bars, side, lvl):
     return touched and turned
 
 
+def find_cause(start_epoch: int, direction: int) -> list[dict]:
+    try:
+        import pandas as pd
+        from . import specialists as sp
+        return sp.cause_of_move(sp.headlines(hours=3), pd.Timestamp(start_epoch, unit="s", tz="UTC"), direction)
+    except Exception as e:
+        print("ニュース取得エラー:", e)
+        return []
+
+
+def cause_text(causes: list[dict]) -> str:
+    if not causes:
+        return "原因: まだ関連ニュースが見つかりません (見つかれば続報を送ります)"
+    lines = ["考えられる原因 (ニュースの見出しから推定)"]
+    for x in causes:
+        lines.append(f"・{x['time'].tz_convert('Asia/Tokyo'):%H:%M} {x['title'][:80]}")
+    cats = sorted({c for x in causes for c in x["cats"]})
+    if cats:
+        lines.append("分類: " + "、".join(cats))
+    lines.append("※速報・観測報道は後で否定されることがあります。公式発表で確認を")
+    return "\n".join(lines)
+
+
 def run(dry=False):
     from . import notify
     t0 = time.time()
@@ -86,12 +109,26 @@ def run(dry=False):
         last = st.get("shock", {})
         if now - last.get("t", 0) > 1800 or last.get("dir") != direction or z >= last.get("z", 0) * 1.5:
             title = f"⚠️ {direction} USD/JPY {c:.2f}"
+            causes = find_cause(now - k * 60, 1 if mv > 0 else -1)
             body = (f"**{k}分で {mv:+.2f}円**（普段の{z:.1f}倍）\n"
                     f"60分: {moves.get(60, (0, 0))[0]:+.2f}円 / 15分: {moves.get(15, (0, 0))[0]:+.2f}円\n"
-                    "━━━━━━━━━━\n今は入らないでください。\n下げ止まり・上げ止まりをAIが確認したら、売買の判断を通知します。")
+                    "━━━━━━━━━━\n" + cause_text(causes) +
+                    "\n━━━━━━━━━━\n今は入らないでください。\n下げ止まり・上げ止まりをAIが確認したら、売買の判断を通知します。")
+            if not causes:
+                st["cause_pending"] = {"start": now - k * 60, "dir": 1 if mv > 0 else -1, "until": now + 1800, "label": direction}
             out.append((title, body, 16776960))
             st["shock"] = {"t": now, "dir": direction, "z": z}
             st["pending_rebound"] = {"t": now, "dir": direction, "extreme": c}
+    # 1b) 原因が見つかっていない急変は、30分以内に「原因の続報」を送る
+    cp = st.get("cause_pending")
+    if cp and not shock:
+        if now > cp["until"]:
+            st.pop("cause_pending", None)
+        else:
+            causes = find_cause(cp["start"], cp["dir"])
+            if causes:
+                out.append((f"📰 {cp['label']}の原因 (続報)", cause_text(causes), 3447003))
+                st.pop("cause_pending", None)
     # 2) チャンスの候補 → AI の詳しい分析へ
     trigger = None
     if lv:

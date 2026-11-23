@@ -19,7 +19,8 @@ CAUSES = {
     "日銀": ["日銀", "植田", "決定会合", "日本銀行"],
     "FRB・米金利": ["FRB", "パウエル", "FOMC", "米金利", "利下げ", "利上げ示唆", "米国債"],
     "経済指標": ["雇用統計", "CPI", "PCE", "GDP", "指標", "物価", "小売"],
-    "リスク回避・株式": ["株安", "急落", "NASDAQ", "ナスダック", "VIX", "リスク回避", "リスクオフ"],
+    "リスク回避・株安": ["株安", "NASDAQ下落", "VIX", "リスク回避", "リスクオフ", "株価急落"],
+    "リスク選好・株高": ["リスクオン", "リスク選好", "株高", "株価上昇", "エヌビディア", "NVIDIA", "ハイテク", "AI関連"],
     "政治・地政学": ["関税", "選挙", "地政学", "首脳", "政権", "戦争", "制裁"],
 }
 
@@ -39,6 +40,32 @@ def headlines(query="ドル円", hours=24) -> list[dict]:
         title = re.sub(r"\s*-\s*[^-]+$", "", it.findtext("title") or "")
         out.append({"time": t, "title": title, "link": it.findtext("link")})
     return sorted(out, key=lambda x: x["time"], reverse=True)
+
+
+UP_WORDS = ["上昇", "上げ", "高値", "円売り", "ドル買い", "リスクオン", "強含み", "続伸"]
+DOWN_WORDS = ["下落", "下げ", "安値", "円買い", "ドル売り", "リスクオフ", "リスク回避", "弱含み", "急落", "介入"]
+
+
+def cause_of_move(items: list[dict], start, direction: int) -> list[dict]:
+    """急変の原因らしい見出しを選ぶ。急変が始まった時刻 (start) の10分前以降の見出しだけを使い、
+    「速報」・値動きの向きと合う言葉・原因の種類の言葉を含むものを高く評価する"""
+    res = []
+    for x in items:
+        if x["time"] < start - pd.Timedelta(minutes=10):
+            continue
+        t = x["title"]
+        sc = 0
+        sc += 2 if "速報" in t else 0
+        sc += 2 if any(w in t for w in (UP_WORDS if direction > 0 else DOWN_WORDS)) else 0
+        sc -= 2 if any(w in t for w in (DOWN_WORDS if direction > 0 else UP_WORDS)) else 0
+        cats = [c for c, ws in CAUSES.items() if any(w in t for w in ws)]
+        sc += 2 if cats else 0
+        sc += 1 if ("ドル円" in t or "ドル・円" in t or "円" in t) else 0
+        if "テクニカル" in t or "ピボット" in t or "チャート" in t:
+            sc -= 3
+        if sc >= 3:
+            res.append({**x, "score": sc, "cats": cats})
+    return sorted(res, key=lambda x: (-x["score"], -x["time"].value))[:2]
 
 
 def classify(items: list[dict]) -> list[tuple[str, int, str]]:
@@ -61,7 +88,13 @@ def shock_view(h: pd.DataFrame, anom: dict, news: list[dict]) -> dict:
     stopped = (h.Low.iat[n] > h.Low.iat[n - 1] and h.Close.iat[n] > h.Open.iat[n]) if side == -1 else \
               (h.High.iat[n] < h.High.iat[n - 1] and h.Close.iat[n] < h.Open.iat[n])
     lines = [f"24時間の動き {move24:+.2f}円 (普段の{anom.get('z', 0):.1f}倍)"]
-    if causes:
+    # まず、動いた向きと時刻に合う見出しを探す (直近6時間)。無ければ話題の多さで推定
+    best = cause_of_move(news, h.index[-1] - pd.Timedelta(hours=6), 1 if move24 > 0 else -1) if news else []
+    if best:
+        lines.append(f"考えられる原因: 「{best[0]['title'][:60]}」 ({best[0]['time'].tz_convert('Asia/Tokyo'):%H:%M})")
+        if best[0]["cats"]:
+            causes = [(c, 1, best[0]["title"]) for c in best[0]["cats"]] + causes
+    elif causes:
         lines.append("考えられる原因: " + "、".join(f"{c} ({k}件)" for c, k, _ in causes[:3]))
         lines.append(f"代表的な見出し: 「{causes[0][2][:60]}」")
     else:
