@@ -51,6 +51,9 @@ def candidates(h: pd.DataFrame) -> pd.DataFrame:
     up = h.trend_up.values
     events = st.events(h.index)
     rows = []
+    atr_ratio = (h.atr / h.atr.rolling(480).mean()).values
+    ev_idx = events.searchsorted(h.index)
+    h_to_ev = np.array([(events[j] - t).total_seconds() / 3600 if j < len(events) else 999 for j, t in zip(ev_idx, h.index)])
 
     def add(i, key, side, stop, tgt, aligned=True):
         if i + 1 >= len(h):
@@ -72,6 +75,8 @@ def candidates(h: pd.DataFrame) -> pd.DataFrame:
         pips_tf, _, _ = outcome(h, i + 1, side, stop, tgt, HOLD[key], target_first=True)
         rows.append(dict(time=t, key=key, regime=reg, side=side, aligned=aligned, score_ok="|".join(x.split(" ")[0] for x in ok),
                          n_warn=len(warn), serious=serious, awake=scan.awake(t + pd.Timedelta(hours=1), events),
+                         jst_hour=(t + pd.Timedelta(hours=10)).hour, weekday=(t + pd.Timedelta(hours=10)).weekday(),
+                         atr_ratio=atr_ratio[i], h_to_event=h_to_ev[i],
                          stop=stop, target=tgt, i=i, pips=pips, risk_pips=risk_pips, result=res, ambiguous=amb, pips_target_first=pips_tf))
 
     for i in range(700, len(h) - 2):
@@ -327,6 +332,117 @@ def decide(a: pd.DataFrame) -> tuple[dict, list[str]]:
     return cur, notes
 
 
+# ---------------------------------------------------------------- 8. 組み合わせの総当たり (年代ごと)
+COMBO_SPACE = {
+    "作戦": [frozenset(c) for n in range(1, 5) for c in itertools.combinations(["H3", "H4", "H5", "S"], n)],
+    "相場状態で切り替え": [True, False],
+    "流れの方向だけ": [True, False],
+    "ノートレード判定": [True, False],
+    "信頼度の基準": [0, 55, 65, 75],
+    "時間帯": ["全部", "深夜〜早朝を除く", "ロンドン〜NYだけ"],
+    "曜日": ["全部", "月金を除く"],
+    "値動きの大きさ": ["全部", "小さすぎを除く", "大きすぎを除く"],
+    "指標の直前を除く": [False, True],
+}
+
+
+def combo_masks(a: pd.DataFrame) -> dict:
+    """各フィルター設定ごとのマスクを先に作り、組み合わせはその掛け算 (AND) で速く計算する"""
+    sc = score(a)
+    m = {}
+    m["作戦"] = {v: a.key.isin(v).values for v in COMBO_SPACE["作戦"]}
+    m["相場状態で切り替え"] = {True: np.array([(k, r) in scan.RULES for k, r in zip(a.key, a.regime)]), False: np.ones(len(a), bool)}
+    m["流れの方向だけ"] = {True: (a.aligned | ~a.key.isin(["H4", "S"])).values, False: np.ones(len(a), bool)}
+    m["ノートレード判定"] = {True: (~a.serious).values, False: np.ones(len(a), bool)}
+    m["信頼度の基準"] = {th: ((sc >= th) | (a.key == "S")).values for th in COMBO_SPACE["信頼度の基準"]}
+    hr = a.jst_hour.values
+    m["時間帯"] = {"全部": np.ones(len(a), bool), "深夜〜早朝を除く": ~((hr >= 2) & (hr < 8)), "ロンドン〜NYだけ": (hr >= 16) | (hr < 2)}
+    wd = a.weekday.values
+    m["曜日"] = {"全部": np.ones(len(a), bool), "月金を除く": ~np.isin(wd, [0, 4])}
+    ar = a.atr_ratio.values
+    m["値動きの大きさ"] = {"全部": np.ones(len(a), bool), "小さすぎを除く": ~(ar < 0.7), "大きすぎを除く": ~(ar > 1.8)}
+    m["指標の直前を除く"] = {False: np.ones(len(a), bool), True: ~(a.h_to_event.values < 2)}
+    return m
+
+
+def combo_search(a: pd.DataFrame, min_trades=60, min_per_era=8) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    masks = combo_masks(a)
+    eras = a.era.cat.codes.values if hasattr(a.era, "cat") else pd.Categorical(a.era).codes
+    era_names = list(a.era.cat.categories) if hasattr(a.era, "cat") else sorted(set(a.era))
+    present = [k for k in range(len(era_names)) if (eras == k).sum() > 0]
+    pips = a.pips.values
+    keys = list(COMBO_SPACE)
+    rows, seen = [], set()
+    for vals in itertools.product(*COMBO_SPACE.values()):
+        mk = np.ones(len(a), bool)
+        for k, v in zip(keys, vals):
+            mk &= masks[k][v]
+        n = mk.sum()
+        if n < min_trades:
+            continue
+        sig = hash(np.packbits(mk).tobytes())   # 結果が同じ取引の集合になる組み合わせは1つにまとめる (最初=いちばん単純なもの)
+        if sig in seen:
+            continue
+        seen.add(sig)
+        era_avg = []
+        for k in present:
+            sel = mk & (eras == k)
+            era_avg.append(pips[sel].mean() if sel.sum() >= min_per_era else np.nan)
+        ea = np.array(era_avg, float)
+        valid = ~np.isnan(ea)
+        if valid.sum() < max(1, int(np.ceil(len(present) * 0.6))):
+            continue
+        p = pips[mk]
+        eq = np.cumsum(p)
+        # 控えめな成績: 年代ごとに (平均 - 1.64 x 標準誤差) を出し、その中央値。回数の少ない偶然の好成績を割り引く
+        lower = []
+        for k in present:
+            sel = mk & (eras == k)
+            if sel.sum() >= min_per_era:
+                x = pips[sel]; lower.append(x.mean() - 1.64 * x.std(ddof=1) / np.sqrt(len(x)))
+        rows.append({**{k: (",".join(sorted(v)) if isinstance(v, frozenset) else v) for k, v in zip(keys, vals)},
+                     "回数": int(n), "平均pips": round(p.mean(), 2), "合計pips": round(p.sum()), "最大DD": round((np.maximum.accumulate(eq) - eq).max()),
+                     "プラスの年代": int((ea[valid] > 0).sum()), "評価した年代": int(valid.sum()),
+                     "最悪の年代の平均": round(np.nanmin(ea), 2), "年代平均の中央値": round(np.nanmedian(ea), 2),
+                     "控えめな成績": round(float(np.median(lower)), 2) if lower else None,
+                     **{f"年代:{era_names[k]}": (round(v, 1) if not np.isnan(v) else None) for k, v in zip(present, ea)}})
+    r = pd.DataFrame(rows)
+    if r.empty:
+        return r, pd.DataFrame(), pd.DataFrame()
+    r["プラスの割合"] = r.プラスの年代 / r.評価した年代
+    r = r.sort_values(["控えめな成績", "プラスの割合", "最悪の年代の平均"], ascending=False).reset_index(drop=True)
+    # 共通点: 上位50の中で各設定が占める割合 と 全体での割合
+    top = r.head(50)
+    common = []
+    for k in keys:
+        for v, cnt in top[k].astype(str).value_counts().items():
+            base = (r[k].astype(str) == v).mean()
+            common.append({"項目": k, "設定": v, "上位50での割合": f"{cnt / len(top):.0%}", "全体での割合": f"{base:.0%}",
+                           "倍率": round(cnt / len(top) / base, 2) if base else None})
+    common = pd.DataFrame(common).sort_values("倍率", ascending=False)
+    # 選び方の検証: 前の年代までで最も安定した組み合わせを選び、次の年代で確かめる
+    wf = []
+    era_cols = [c for c in r.columns if c.startswith("年代:")]
+    for j in range(2, len(era_cols)):
+        past, nxt = era_cols[:j], era_cols[j]
+        pr = r[past].apply(lambda row: row.dropna(), axis=1)
+        pos = (r[past] > 0).sum(axis=1) / r[past].notna().sum(axis=1).replace(0, np.nan)
+        med = r[past].median(axis=1)
+        # 選ぶ時も回数を重視: 過去の年代の中央値に、回数の平方根で重みを付ける (少ない回数の偶然を選びにくくする)
+        sc_ = med * np.sqrt(r["回数"]) / np.sqrt(r["回数"].max())
+        cand = r.assign(_pos=pos, _sc=sc_).dropna(subset=[nxt]).sort_values(["_pos", "_sc"], ascending=False)
+        if cand.empty:
+            continue
+        best = cand.iloc[0]
+        live = r[(r["作戦"] == "H3,H4,H5,S") & (r["相場状態で切り替え"] == True) & (r["流れの方向だけ"] == True)
+                 & (r["ノートレード判定"] == True) & (r["信頼度の基準"] == 65) & (r["時間帯"] == "全部") & (r["曜日"] == "全部")
+                 & (r["値動きの大きさ"] == "全部") & (r["指標の直前を除く"] == False)]
+        wf.append({"確かめる年代": nxt[3:], "選んだ組み合わせのその年代の平均pips": best[nxt],
+                   "今の運用のその年代の平均pips": live[nxt].iloc[0] if len(live) else None,
+                   "選んだ組み合わせ": "; ".join(f"{k}={best[k]}" for k in keys)})
+    return r, common, pd.DataFrame(wf)
+
+
 def run(h: pd.DataFrame | None = None, quick=False, apply=False) -> str:
     from . import longdata
     if h is None:
@@ -348,6 +464,14 @@ def run(h: pd.DataFrame | None = None, quick=False, apply=False) -> str:
     md += ["## 5. コスト悪化テスト", "", cost_stress(h, a).to_markdown(index=False), ""]
     md += ["## 6. 足の中の順番 (損切り優先の影響)", ""] + [f"- {k}: {v}" for k, v in intrabar(a).items()] + [""]
     md += ["## 4. モンテカルロ (取引の順番を5000回並べ替え)", "", monte_carlo(a).to_markdown(index=False), ""]
+    r, common, cwf = combo_search(a)
+    if len(r):
+        md += [f"## 8. 組み合わせの総当たり ({len(r)}通りを評価。年代ごとの安定性で順位付け)", "",
+               "上位20:", "", r.head(20).drop(columns=["プラスの割合"]).to_markdown(index=False), "",
+               "### 精度の高い組み合わせの共通点 (上位50で多い設定。倍率が1より大きいほど上位に多い)", "", common.head(25).to_markdown(index=False), "",
+               "### 選び方の検証 (前の年代までで最も安定した組み合わせを選び、次の年代で確かめる)", "",
+               cwf.to_markdown(index=False) if len(cwf) else "年代が足りないため未実施", ""]
+        r.head(500).to_csv(os.path.join(os.path.dirname(OUT), "research_combos.csv.gz"), index=False)
     if not quick:
         sens, wf = sensitivity_and_wf(h)
         for name in GRIDS:

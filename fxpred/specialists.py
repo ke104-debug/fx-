@@ -65,7 +65,13 @@ def cause_of_move(items: list[dict], start, direction: int) -> list[dict]:
             sc -= 3
         if sc >= 3:
             res.append({**x, "score": sc, "cats": cats})
-    return sorted(res, key=lambda x: (-x["score"], -x["time"].value))[:2]
+    out, seen = [], set()
+    for x in sorted(res, key=lambda x: (-x["score"], -x["time"].value)):
+        key = re.sub(r"[\(（].*?[\)）]|｜.*$", "", x["title"])[:30]   # 配信元違いの同じ見出しは1つに
+        if key in seen:
+            continue
+        seen.add(key); out.append(x)
+    return out[:2]
 
 
 def classify(items: list[dict]) -> list[tuple[str, int, str]]:

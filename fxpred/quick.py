@@ -66,6 +66,62 @@ def confirmed(bars, side, lvl):
     return touched and turned
 
 
+ASSETS = {"ES=F": "米国株先物 (S&P500)", "NIY=F": "日経平均先物", "ZN=F": "米国債先物 (10年)"}
+
+
+def _series(ticker):
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=5d"
+    d = json.load(urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"}), timeout=15))
+    r = d["chart"]["result"][0]
+    return [(t, c) for t, c in zip(r["timestamp"], r["indicators"]["quote"][0]["close"]) if c is not None]
+
+
+def cross_asset(start_epoch: int, direction: int) -> str | None:
+    """急変と同じ時間に、株・日経・米国債がどう動いたか (Yahoo の先物は約10分遅れ)。
+    ニュースを待たずに、リスクオン / リスクオフ / 米金利 / 円独自の要因 を見分ける"""
+    z = {}
+    for tk in ASSETS:
+        try:
+            ser = _series(tk)
+        except Exception:
+            continue
+        if len(ser) < 300 or ser[-1][0] < start_epoch:
+            continue
+        before = [c for t, c in ser if t <= start_epoch]
+        if not before:
+            continue
+        mv = ser[-1][1] - before[-1]
+        mins = max((ser[-1][0] - start_epoch) / 60, 5)
+        ch = [ser[i][1] - ser[i - 5][1] for i in range(5, len(ser), 5)]
+        m = sum(ch) / len(ch); sd = math.sqrt(sum((x - m) ** 2 for x in ch) / len(ch)) or 1e-9
+        z[tk] = mv / (sd * math.sqrt(mins / 5))
+    if not z:
+        return None
+    stock = (z.get("ES=F", 0) + z.get("NIY=F", 0)) / (2 if "NIY=F" in z and "ES=F" in z else 1)
+    bond = z.get("ZN=F", 0)   # 債券先物が下がる = 金利が上がる
+    parts = []
+    for tk, v in z.items():
+        word = "上昇" if v > 1.5 else "下落" if v < -1.5 else "ほぼ横ばい"
+        parts.append(f"{ASSETS[tk]} {word} ({v:+.1f})")
+    if direction > 0 and stock > 1.5 and bond < -1:
+        why = "リスクオン (株高・米金利上昇) による円売り・ドル買い"
+    elif direction > 0 and stock > 1.5:
+        why = "リスクオン (株高) による円売り"
+    elif direction > 0 and bond < -1.5:
+        why = "米金利の上昇によるドル買い"
+    elif direction < 0 and stock < -1.5 and bond > 1:
+        why = "リスクオフ (株安・米金利低下) による円買い"
+    elif direction < 0 and stock < -1.5:
+        why = "リスクオフ (株安) による円買い"
+    elif direction < 0 and bond > 1.5:
+        why = "米金利の低下によるドル売り"
+    elif abs(stock) < 1 and abs(bond) < 1:
+        why = "株・金利は静か → 円独自の要因 (介入・日銀・要人発言など) の可能性"
+    else:
+        why = "はっきりしない"
+    return f"市場の連動 (約10分遅れ): {why}\n　" + " / ".join(parts)
+
+
 def find_cause(start_epoch: int, direction: int) -> list[dict]:
     try:
         import pandas as pd
@@ -76,8 +132,14 @@ def find_cause(start_epoch: int, direction: int) -> list[dict]:
         return []
 
 
-def cause_text(causes: list[dict], start_epoch: int | None = None) -> str:
+def cause_text(causes: list[dict], start_epoch: int | None = None, direction: int = 0) -> str:
     ev_lines = []
+    xa = None
+    if start_epoch and direction:
+        try:
+            xa = cross_asset(start_epoch, direction)
+        except Exception:
+            xa = None
     if start_epoch:
         try:
             import pandas as pd
@@ -86,6 +148,8 @@ def cause_text(causes: list[dict], start_epoch: int | None = None) -> str:
         except Exception:
             pass
     head = (["同じ時刻に発表された指標 (Forex Factory)"] + ["・" + x for x in ev_lines] + [""]) if ev_lines else []
+    if xa:
+        head = [xa, ""] + head
     if not causes:
         return "\n".join(head + ["原因: まだ関連ニュースが見つかりません (見つかれば続報を送ります)"])
     lines = head + ["考えられる原因 (ニュースの見出しから推定)"]
@@ -124,7 +188,7 @@ def run(dry=False):
             causes = find_cause(now - k * 60, 1 if mv > 0 else -1)
             body = (f"**{k}分で {mv:+.2f}円**（普段の{z:.1f}倍）\n"
                     f"60分: {moves.get(60, (0, 0))[0]:+.2f}円 / 15分: {moves.get(15, (0, 0))[0]:+.2f}円\n"
-                    "━━━━━━━━━━\n" + cause_text(causes, now - k * 60) +
+                    "━━━━━━━━━━\n" + cause_text(causes, now - k * 60, 1 if mv > 0 else -1) +
                     "\n━━━━━━━━━━\n今は入らないでください。\n下げ止まり・上げ止まりをAIが確認したら、売買の判断を通知します。")
             if not causes:
                 st["cause_pending"] = {"start": now - k * 60, "dir": 1 if mv > 0 else -1, "until": now + 1800, "label": direction}
@@ -139,7 +203,7 @@ def run(dry=False):
         else:
             causes = find_cause(cp["start"], cp["dir"])
             if causes:
-                out.append((f"📰 {cp['label']}の原因 (続報)", cause_text(causes, cp["start"]), 3447003))
+                out.append((f"📰 {cp['label']}の原因 (続報)", cause_text(causes, cp["start"], cp["dir"]), 3447003))
                 st.pop("cause_pending", None)
     # 2) チャンスの候補 → AI の詳しい分析へ
     trigger = None
