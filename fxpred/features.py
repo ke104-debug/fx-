@@ -21,7 +21,7 @@ def usd_strength(data: dict[str, pd.DataFrame]) -> pd.Series:
     return pd.concat(rets, axis=1).mean(axis=1)
 
 
-def build(df: pd.DataFrame, ticker: str, usd: pd.Series) -> pd.DataFrame:
+def build(df: pd.DataFrame, ticker: str, usd: pd.Series, horizon: int = HORIZON) -> pd.DataFrame:
     c, h, l = df["Close"], df["High"], df["Low"]
     lr = np.log(c).diff()
     f = pd.DataFrame(index=df.index)
@@ -50,8 +50,8 @@ def build(df: pd.DataFrame, ticker: str, usd: pd.Series) -> pd.DataFrame:
     f["hour_cos"] = np.cos(2 * np.pi * (df.index.hour + df.index.minute / 60) / 24)
     f["dow"] = df.index.dayofweek
     f["pair"] = list(PAIRS).index(ticker)
-    # 目的変数: HORIZON 本後の終値が上がっているか
-    f["fwd_ret"] = np.log(c.shift(-HORIZON) / c)
+    # 目的変数: horizon 本後の終値が上がっているか
+    f["fwd_ret"] = np.log(c.shift(-horizon) / c)
     f["target"] = (f["fwd_ret"] > 0).astype(float).where(f["fwd_ret"].notna())
     f["close"] = c
     f["ticker"] = ticker
