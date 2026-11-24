@@ -169,7 +169,8 @@ def run_health() -> str | None:
     since = (pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
     out = []
     for wf, label, expect in (("fx-quick.yml", "5分監視", 288), ("fx-auto.yml", "毎時の分析", 48)):
-        url = f"https://api.github.com/repos/{repo}/actions/workflows/{wf}/runs?event=schedule&created=>={since}&per_page=1"
+        # 定期実行 (schedule) と Cloudflare の時計役 (workflow_dispatch) の両方を数える。成功した回だけ
+        url = f"https://api.github.com/repos/{repo}/actions/workflows/{wf}/runs?status=success&created=>={since}&per_page=1"
         try:
             req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"})
             n = json.load(urllib.request.urlopen(req, timeout=15)).get("total_count", 0)
