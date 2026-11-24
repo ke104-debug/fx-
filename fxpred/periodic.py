@@ -117,8 +117,10 @@ def review(h: pd.DataFrame, days: int, monthly: bool) -> tuple[str, str]:
     os.makedirs(dp.J, exist_ok=True)
     json.dump(learn, open(dp.LEARN, "w"), ensure_ascii=False, indent=1)
     try:   # 進言AI (AIの組織の足りない部分・弱っている部分)
-        from .org import advisor
-        lines += ["", "**進言AI (AIの組織)**"] + [f"・{x}" for x in advisor.advise()]
+        from .org import advisor, auditor, review as org_review
+        lines += ["", "**改善研究部隊・進言AI**"] + [f"・{x}" for x in advisor.advise()]
+        lines += ["", "**シミュレーション・検証部隊 (進言の再検証)**"] + [f"・{x}" for x in org_review.run()]
+        lines += ["", "**監査AI (問題点)**"] + [f"・{x}" for x in auditor.audit(h)]
     except Exception as e:
         print("進言AIのエラー:", e)
     title = f"📊 {'月次' if monthly else '週次'}の見直し USD/JPY ({(since + timedelta(days=1)).tz_convert(dp.JST):%m/%d}〜{h.index[-1].tz_convert(dp.JST):%m/%d})"

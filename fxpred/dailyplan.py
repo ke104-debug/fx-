@@ -234,6 +234,17 @@ def morning_message(h: pd.DataFrame, a: dict, fc: dict, reviews: list[dict], lea
         else:
             lines.append("ずれは想定内（変更なし）")
         lines.append(f"通算: 方向 {allr.hit_dir.mean():.0%}（{len(allr)}日）")
+    try:   # AI の組織 (検証中): 全統括AIの結論・リスク管理部隊・Gemini のまとめ・監査AI
+        from .org import meeting, auditor
+        res = meeting.final(h)
+        lines += ["━━━━━━━━━━", "AIの組織の会議 (検証中・参考)", f"・全統括AI: {res['conclusion']}",
+                  f"・リスク管理部隊: {res['risk']['level']}" + (f" ({res['risk']['items'][0][1]})" if res["risk"]["items"] else "")]
+        summ = [o["reason"] for o in res["ops"] if o["name"] == "AI情報|まとめ"]
+        if summ:
+            lines.append(f"・情報解析部隊 (AI): {summ[0]}")
+        lines.append(f"・監査AI: {auditor.audit(h)[0]}")
+    except Exception as e:
+        print("AIの組織のエラー:", e)
     try:
         hl = run_health()
         if hl:

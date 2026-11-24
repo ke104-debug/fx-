@@ -15,10 +15,13 @@ from .. import specialists as sp
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 W_PATH = os.path.join(ROOT, "config", "org_weights.json")
 LOG = os.path.join(ROOT, "journal", "org.csv")
-DEPTS = {"相場分析": "相場分析部", "強さ": "相場分析部", "テクニカル": "相場分析部", "ローソク足": "相場分析部",
-         "チャートパターン": "相場分析部", "サポレジ": "相場分析部", "マルチタイム": "相場分析部", "ボラティリティ": "相場分析部",
-         "市場構造": "相場分析部", "AI情報": "情報部", "金融政策": "情報部", "他市場": "情報部", "センチメント": "情報部",
-         "経済指標": "情報部", "ニュース": "情報部", "地政学": "情報部"}
+# 大きな部隊: 全統括AI / 作戦部隊 / 情報解析部隊 / 相場分析部隊 / リスク管理部隊 / シミュレーション・検証部隊 / 改善研究部隊 + 監査AI (組織の外)
+# 向きの意見を出すのは 情報解析部隊 と 相場分析部隊。作戦部隊は売買の合図、リスク管理部隊は取引してよい状況か、
+# シミュレーション・検証部隊 (score.py・review.py) は重み、改善研究部隊 (advisor.py) は足りない部分の進言、監査AI (auditor.py) は問題点
+DEPTS = {"相場分析": "相場分析部隊", "強さ": "相場分析部隊", "テクニカル": "相場分析部隊", "ローソク足": "相場分析部隊",
+         "チャートパターン": "相場分析部隊", "サポレジ": "相場分析部隊", "マルチタイム": "相場分析部隊", "ボラティリティ": "相場分析部隊",
+         "市場構造": "相場分析部隊", "AI情報": "情報解析部隊", "金融政策": "情報解析部隊", "他市場": "情報解析部隊", "センチメント": "情報解析部隊",
+         "経済指標": "情報解析部隊", "ニュース": "情報解析部隊", "地政学": "情報解析部隊"}
 
 
 def weights() -> dict:
@@ -122,24 +125,63 @@ def decide(ops: list[dict], w: dict | None = None) -> dict:
     return {"overall": round(overall, 3), "verdict": verdict, "depts": dept, "caution": caution}
 
 
+def plans(hours=3) -> list[dict]:
+    """作戦部隊: 直近 hours 時間に出た売買の合図 (送ったもの・見送ったもの)"""
+    p = os.path.join(ROOT, "journal", "signals.csv")
+    if not os.path.exists(p):
+        return []
+    s = pd.read_csv(p)
+    s["t"] = pd.to_datetime(s.time_utc, utc=True)
+    s = s[s.t >= pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=hours)]
+    return s.to_dict("records")
+
+
+def final(h: pd.DataFrame, ops: list[dict] | None = None) -> dict:
+    """全統括AI: 方向の会議 + 作戦部隊の合図 + リスク管理部隊の判定 → 最終結論"""
+    from . import risk
+    ops = ops if ops is not None else opinions(h)
+    res = decide(ops)
+    rk = risk.check(h, ops)
+    pl = plans()
+    sent = [p for p in pl if str(p.get("sent")) == "True"]
+    if rk["level"] == "警戒":
+        concl = "新しく入らない (リスク管理部隊が警戒)"
+    elif sent:
+        p = sent[-1]
+        side = "買い" if int(p["side"]) == 1 else "売り"
+        agree = (res["overall"] > 0.1 and int(p["side"]) == 1) or (res["overall"] < -0.1 and int(p["side"]) == -1)
+        against = (res["overall"] < -0.1 and int(p["side"]) == 1) or (res["overall"] > 0.1 and int(p["side"]) == -1)
+        concl = f"{side}の合図あり ({p['entry']}・損切り{p['stop']})" + ("。方向の会議も同じ向き" if agree else "。方向の会議は逆向き、慎重に" if against else "")
+    else:
+        concl = {"買い寄り": "買い寄りだが作戦の合図はまだない (下値の押し目を待つ)", "売り寄り": "売り寄りだが作戦の合図はまだない (戻りを待つ)",
+                 "中立": "様子見 (方向の材料が弱い)"}[res["verdict"]]
+    res.update(risk=rk, plans=pl, conclusion=concl, ops=ops)
+    return res
+
+
 def text(res: dict) -> str:
-    L = [f"【統括AI】{res['verdict']} (強さ {res['overall']:+.2f})" + ("　※24時間以内に重要指標" if res["caution"] else "")]
+    L = [f"【全統括AI】{res.get('conclusion', res['verdict'])}",
+         f"【方向の会議】{res['verdict']} (強さ {res['overall']:+.2f})" + ("　※24時間以内に重要指標" if res["caution"] else "")]
+    if "risk" in res:
+        L.append(f"【リスク管理部隊】{res['risk']['level']}" + "".join(f"\n  ・{who}: {why}" for who, why in res["risk"]["items"]))
     for d, g in res["depts"].items():
         sc = "判断に使う意見なし" if g["score"] is None else f"{g['score']:+.2f}"
         L.append(f"【{d}】{sc}")
         for o in g["voters"]:
             L.append(f"  ・{o['name'].split('|')[1]} {o['bias']:+.2f} … {o['reason']}")
-        for o in g["notes"][:4]:
+        pri = lambda o: (0 if o["name"].startswith("AI情報") else 1 if o["name"].split("|")[0] in ("ニュース", "地政学", "経済指標") else 2)
+        for o in sorted([o for o in g["notes"] if o.get("reason") and o["reason"] != "合図あり"], key=pri)[:6]:
             L.append(f"  (参考) {o['name'].split('|')[1]} … {o['reason']}")
     return "\n".join(L)
 
 
 def log(h: pd.DataFrame) -> dict:
     """影の運用: 会議の結果を journal/org.csv に1時間1行で残す (通知はしない)"""
-    ops = opinions(h)
-    res = decide(ops)
+    res = final(h)
+    ops = res["ops"]
     row = {"time_utc": f"{h.index[-1] + pd.Timedelta(hours=1):%Y-%m-%d %H:%M}", "price": round(float(h.Close.iat[-1]), 3),
            "overall": res["overall"], "verdict": res["verdict"], "caution": res["caution"],
+           "risk": res["risk"]["level"], "conclusion": res["conclusion"],
            **{o["name"]: round(o["bias"], 3) for o in ops}}
     os.makedirs(os.path.dirname(LOG), exist_ok=True)
     if os.path.exists(LOG):
@@ -155,4 +197,4 @@ def log(h: pd.DataFrame) -> dict:
 if __name__ == "__main__":
     from .. import scan
     h = scan.load_recent()
-    print(text(decide(opinions(h))))
+    print(text(final(h)))

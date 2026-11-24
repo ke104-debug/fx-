@@ -30,7 +30,7 @@ def live_scores(min_rows=48) -> pd.DataFrame:
     fut = d.price.shift(-24)          # 1時間1行なので24行先 ≒ 24時間後
     r = (fut - d.price) * 100        # pips
     rows = []
-    skip = {"price", "overall", "verdict", "caution"}
+    skip = {"price", "overall", "verdict", "caution", "risk", "conclusion"}
     for c in d.columns:
         if c in skip or d[c].dtype == object:
             continue
