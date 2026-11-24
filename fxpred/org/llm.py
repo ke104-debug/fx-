@@ -60,7 +60,9 @@ def ask(price: float, now=None) -> dict | None:
     now = now or pd.Timestamp.now(tz="UTC")
     st = _load()
     day = f"{now:%Y-%m-%d}"
-    if st.get("last") and time.time() - st.get("last_ts", 0) < 3300:
+    jh = (now + pd.Timedelta(hours=9)).hour
+    every = 3300 if (jh >= 10 or jh < 2) else 3 * 3600 - 300      # 無料枠の節約: 活動時間外 (2〜10時) は3時間に1回
+    if st.get("last") and time.time() - st.get("last_ts", 0) < every:
         return st.get("result")
     from . import gem
     if not gem.allowed("ニュース"):          # 無料枠の管理 (gem.py) で止められている
@@ -95,10 +97,13 @@ def ask(price: float, now=None) -> dict | None:
             "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"}}
     res, model, errs, tokens = None, None, [], 0
     try:
-        cands = ([st["model"]] if st.get("model") else []) + [m for m in _models() if m != st.get("model")]
+        allm = _models()
+        gem.set_models(len(allm))
+        cands = ([st["model"]] if st.get("model") in allm else []) + [m for m in allm if m != st.get("model")]
     except Exception as e:
         print("Gemini のモデル一覧を取れませんでした:", str(e)[:120])
         cands = [st["model"]] if st.get("model") else []
+    cands = gem.usable(cands)
     for m in cands[:4]:              # 無料枠が無い・使い切ったモデルは次の候補へ (1回の実行で4つまで)
         try:
             out = _get(f"{API}/{m}:generateContent", body)
@@ -108,9 +113,12 @@ def ask(price: float, now=None) -> dict | None:
             tokens = out.get("usageMetadata", {}).get("totalTokenCount", 0)
             break
         except Exception as e:
-            errs.append(f"{m.split('/')[-1]}: {'429 ' if gem.learn(e) else ''}{str(e)[:60]}")
+            q = gem.learn(e)
+            if q:
+                gem.exhausted(m)
+            errs.append(f"{m.split('/')[-1]}: {'429 ' if q else ''}{str(e)[:60]}")
     gem.note("ニュース", ok=res is not None, model=model, tokens=tokens,
-             quota=res is None and sum("429" in e for e in errs) >= 2)
+             quota=res is None and not gem.usable(cands))
     if res is None:
         print("Gemini を呼べませんでした:", " / ".join(errs))
         st.update(last_ts=time.time() - 2400, model=None)    # 20分後にもう一度だけ試せるように

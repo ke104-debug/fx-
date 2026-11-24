@@ -32,7 +32,8 @@ def _load():
     except Exception:
         b = {}
     if b.get("day") != _day():
-        b = {"day": _day(), "count": 0, "by": {}, "blocked": False, "model": b.get("model")}
+        b = {"day": _day(), "count": 0, "by": {}, "blocked": False, "model": b.get("model"),
+             "learned_rpd": b.get("learned_rpd"), "n_models": b.get("n_models", 1), "exhausted": []}
     return b
 
 
@@ -42,11 +43,35 @@ def _save(b):
 
 
 def limit() -> int:
-    """1日の上限 (Google が返した数字を覚えていればそれ、無ければ想定値)"""
+    """1日の上限。Google の無料枠はモデルごとに1日の回数が決まっている (2026-11 時点で1モデル20回) ので、
+    覚えた1モデルの上限 × 使えるモデルの数。分からない間は想定値"""
     try:
-        return int(json.load(open(BUDGET)).get("learned_rpd") or DAILY_CAP)
+        b = json.load(open(BUDGET))
     except Exception:
-        return DAILY_CAP
+        b = {}
+    if b.get("learned_rpd"):
+        return int(b["learned_rpd"]) * max(1, int(b.get("n_models", 1)))
+    return DAILY_CAP
+
+
+def usable(cands: list[str]) -> list[str]:
+    """今日の枠を使い切ったモデルを外す"""
+    ex = set(_load().get("exhausted", []))
+    return [m for m in cands if m not in ex]
+
+
+def exhausted(model: str):
+    b = _load()
+    b.setdefault("exhausted", [])
+    if model and model not in b["exhausted"]:
+        b["exhausted"].append(model)
+    _save(b)
+
+
+def set_models(n: int):
+    b = _load()
+    b["n_models"] = n
+    _save(b)
 
 
 def allowed(job: str) -> bool:
@@ -115,7 +140,9 @@ def status() -> str:
     lim = limit()
     normal = int(lim * NORMAL_SHARE)
     src = "Googleの上限" if b.get("learned_rpd") else "想定の上限"
-    return (f"Gemini 今日 {b['count']}回 / 普段の分 {normal}・緊急の予備 {lim - normal} ({src} {lim}回)・"
+    return (f"Gemini 今日 {b['count']}回 / 普段の分 {normal}・緊急の予備 {lim - normal} ({src} {lim}回"
+            + (f" = 1モデル{b['learned_rpd']}回×{b.get('n_models', 1)}モデル" if b.get("learned_rpd") else "")
+            + f"、使い切ったモデル {len(b.get('exhausted', []))})・"
             f"送った量 約{b.get('tokens', 0) // 1000}千トークン・失敗 {b.get('errors', 0)}回"
             + (" (無料枠の上限に達したため停止中)" if b.get("blocked") else ""))
 
@@ -130,9 +157,15 @@ def call(job: str, prompt: str, as_json=True, temperature=0.2) -> dict | str | N
             "generationConfig": {"temperature": temperature, **({"responseMimeType": "application/json"} if as_json else {})}}
     b = _load()
     try:
-        cands = ([b["model"]] if b.get("model") else []) + [m for m in llm._models() if m != b.get("model")]
+        allm = llm._models()
+        set_models(len(allm))
+        cands = ([b["model"]] if b.get("model") in allm else []) + [m for m in allm if m != b.get("model")]
     except Exception:
         cands = [b["model"]] if b.get("model") else []
+    cands = usable(cands)
+    if not cands:
+        note(job, ok=False, quota=True)
+        return None
     quota_hits, errs = 0, []
     for m in cands[:3]:
         try:
@@ -143,8 +176,9 @@ def call(job: str, prompt: str, as_json=True, temperature=0.2) -> dict | str | N
         except Exception as e:
             if learn(e):
                 quota_hits += 1
+                exhausted(m)          # このモデルは今日の枠を使い切った → 次のモデルへ
             errs.append(f"{m.split('/')[-1]}: {str(e)[:80]}")
             continue
     print(f"Gemini ({job}) を呼べませんでした:", " / ".join(errs) or "候補のモデルなし")
-    note(job, ok=False, quota=quota_hits >= min(len(cands[:3]), 2) and quota_hits > 0)
+    note(job, ok=False, quota=not usable(cands))     # 全部のモデルが使い切った時だけ、その日は止める
     return None
