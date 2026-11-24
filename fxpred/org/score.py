@@ -131,7 +131,64 @@ def write_report(R, C):
     open(os.path.join(ROOT, "reports", "org.md"), "w").write("\n".join(L) + "\n")
 
 
+# ---------------------------------------------------------------- 相場分析部 (1時間足・毎時) の採点
+def run_hourly():
+    """相場分析部の専門AI (chart.py) を毎時の意見で採点。4時間先・24時間先 (次の足の始値から)"""
+    from . import chart
+    h = pd.read_pickle(os.path.join(ROOT, "reports", "_h.pkl"))
+    b = chart.features(h)
+    lo = np.log(h.Open)
+    f4, f24 = (lo.shift(-1 - 4) - lo.shift(-1)) * 1e4, (lo.shift(-1 - 24) - lo.shift(-1)) * 1e4
+    yrs = h.index.year
+    B, V = yrs <= 2015, yrs >= 2016
+    rows, w = [], {}
+    for c in b:
+        a = b[c]
+        i4b, nb = ic(a, f4, B); i24b, _ = ic(a, f24, B)
+        i4v, nv = ic(a, f4, V); i24v, _ = ic(a, f24, V)
+        i24n, _ = ic(a, f24, yrs >= 2022)
+        ib, iv = np.nanmean([i4b, i24b]), np.nanmean([i4v, i24v])
+        # 合図の向きに24時間持った場合の平均 (pips 換算。重ならないよう24本ごと)
+        sig = np.sign(a.values)
+        pips = []
+        i = 0
+        r24 = (h.Open.shift(-25) - h.Open.shift(-1)).values * 100
+        while i < len(sig):
+            if sig[i] != 0 and not np.isnan(r24[i]):
+                pips.append((yrs[i], sig[i] * r24[i] - 0.8)); i += 24
+            else:
+                i += 1
+        p = pd.DataFrame(pips, columns=["y", "p"])
+        # 毎時の専門AIは、IC に加えて「合図の向きに持った損益」が両方の期間でプラスであること
+        ok = (ib > 0.01) and (iv > 0) and p.p[p.y <= 2015].mean() > 0 and p.p[p.y >= 2016].mean() > 0
+        w[c] = round(float(min(ib / 0.04, 1.0)), 2) if ok else 0.0
+        rows.append(dict(部門=c.split("|")[0], 専門AI=c.split("|")[1], 作る4h=i4b, 作る24h=i24b, 確かめ4h=i4v, 確かめ24h=i24v,
+                         直近22年24h=i24n, 年間回数=len(p) / 22.9, 作る_pips=p.p[p.y <= 2015].mean(), 確かめ_pips=p.p[p.y >= 2016].mean(),
+                         合格="○" if ok else "", 重み=w[c]))
+    R = pd.DataFrame(rows)
+    allw = json.load(open(W_PATH)) if os.path.exists(W_PATH) else {"weights": {}}
+    allw.setdefault("weights", {}).update(w)
+    json.dump(allw, open(W_PATH, "w"), ensure_ascii=False, indent=1)
+    f = lambda v: "" if pd.isna(v) else f"{v:+.3f}"
+    L = ["", "## 相場分析部の専門AI (1時間足で毎時)", "",
+         "毎時の意見と、その後4時間・24時間のドル円の動きの順位相関 (IC)。合図の向きに24時間持った場合の平均 pips (往復0.8pips を引く、重ならないよう数える) も載せる。合格は IC と pips の両方が両期間でプラス。", "",
+         "| 部門 | 専門AI | 作る 4h | 作る 24h | 確かめ 4h | 確かめ 24h | 2022- 24h | 年間回数 | 作る pips | 確かめ pips | 合格 | 重み |",
+         "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for r in R.itertuples():
+        L.append(f"| {r.部門} | {r.専門AI} | {f(r.作る4h)} | {f(r.作る24h)} | {f(r.確かめ4h)} | {f(r.確かめ24h)} | {f(r.直近22年24h)} | "
+                 f"{r.年間回数:.0f} | {r.作る_pips:+.1f} | {r.確かめ_pips:+.1f} | {r.合格} | {r.重み} |")
+    path = os.path.join(ROOT, "reports", "org.md")
+    txt = open(path).read().split("\n## 相場分析部の専門AI")[0].rstrip("\n") + "\n"
+    open(path, "w").write(txt + "\n".join(L) + "\n")
+    return R
+
+
 if __name__ == "__main__":
+    import sys
+    if "--hourly" in sys.argv:
+        pd.set_option("display.width", 250)
+        print(run_hourly().round(3).to_string(index=False))
+        raise SystemExit
     R, C = run()
     pd.set_option("display.width", 250)
     print(R.round(3).to_string(index=False))

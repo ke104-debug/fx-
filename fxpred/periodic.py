@@ -116,6 +116,11 @@ def review(h: pd.DataFrame, days: int, monthly: bool) -> tuple[str, str]:
     learn["history"] = learn["history"][-24:]
     os.makedirs(dp.J, exist_ok=True)
     json.dump(learn, open(dp.LEARN, "w"), ensure_ascii=False, indent=1)
+    try:   # 進言AI (AIの組織の足りない部分・弱っている部分)
+        from .org import advisor
+        lines += ["", "**進言AI (AIの組織)**"] + [f"・{x}" for x in advisor.advise()]
+    except Exception as e:
+        print("進言AIのエラー:", e)
     title = f"📊 {'月次' if monthly else '週次'}の見直し USD/JPY ({(since + timedelta(days=1)).tz_convert(dp.JST):%m/%d}〜{h.index[-1].tz_convert(dp.JST):%m/%d})"
     return title, "\n".join(lines)
 

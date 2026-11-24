@@ -45,6 +45,7 @@ jobs:
         run: python -m fxpred auto ${{ inputs.morning && '--morning' || '' }}
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
       - name: 状態と記録を保存
         if: always()

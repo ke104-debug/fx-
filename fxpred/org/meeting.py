@@ -15,7 +15,9 @@ from .. import specialists as sp
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 W_PATH = os.path.join(ROOT, "config", "org_weights.json")
 LOG = os.path.join(ROOT, "journal", "org.csv")
-DEPTS = {"相場分析": "相場分析部", "強さ": "相場分析部", "金融政策": "情報部", "他市場": "情報部", "センチメント": "情報部",
+DEPTS = {"相場分析": "相場分析部", "強さ": "相場分析部", "テクニカル": "相場分析部", "ローソク足": "相場分析部",
+         "チャートパターン": "相場分析部", "サポレジ": "相場分析部", "マルチタイム": "相場分析部", "ボラティリティ": "相場分析部",
+         "市場構造": "相場分析部", "AI情報": "情報部", "金融政策": "情報部", "他市場": "情報部", "センチメント": "情報部",
          "経済指標": "情報部", "ニュース": "情報部", "地政学": "情報部"}
 
 
@@ -45,6 +47,14 @@ def opinions(h: pd.DataFrame, now=None) -> list[dict]:
     e50, e200 = c.ewm(span=50).mean().iat[-1], c.ewm(span=200).mean().iat[-1]
     ops.append(dict(name="相場分析|トレンド(50/200本)", bias=float(np.sign(e50 - e200)), reason="50本平均が200本平均の" + ("上" if e50 > e200 else "下")))
     ops.append(dict(name="相場分析|前日からの勢い", bias=float(np.sign(c.iat[-1] - c.iat[-25])), reason=f"24時間で {(c.iat[-1] - c.iat[-25]) * 100:+.0f}pips"))
+    # ⑩〜⑮ 相場分析部の専門AI (1時間足の最新の確定足)
+    try:
+        from . import chart
+        cb = chart.features(h).iloc[-1]
+        for k, v in cb.items():
+            ops.append(dict(name=k, bias=float(v) if pd.notna(v) else 0.0, reason="合図あり" if v else ""))
+    except Exception as e:
+        print("相場分析部のエラー:", e)
     # 履歴で検証できない専門AI (記録を始めた日から採点)
     news = sp.headlines(hours=24)
     for name, fn in (("ニュース|見出しの向き", an.news_now), ("地政学|紛争・制裁のニュース", an.geo_now),
@@ -54,6 +64,11 @@ def opinions(h: pd.DataFrame, now=None) -> list[dict]:
             ops.append(dict(name=name, bias=o["bias"], reason=o["reason"]))
         except Exception as e:
             ops.append(dict(name=name, bias=0.0, reason=f"取得できず ({e})"))
+    try:   # Gemini (無料枠) に見出しを読ませる専門AI。キーが無ければ何もしない
+        from . import llm
+        ops += llm.opinions(float(h.Close.iat[-1]))
+    except Exception as e:
+        print("AI情報のエラー:", e)
     o = an.events_now(now)
     ops.append(dict(name="経済指標|重要指標の予定", bias=0.0, reason=o["reason"], caution=o.get("caution", False)))
     return ops
