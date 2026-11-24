@@ -23,7 +23,9 @@ JST = "Asia/Tokyo"
 # (作戦, 相場状態) -> 1回のリスク (資金に対する損失上限)。最大下落20%以内を目安に抑えた設定
 RULES = {("S", "荒れ"): 0.04, ("H4", "通常"): 0.015, ("H5", "通常"): 0.01, ("H3", "通常"): 0.01, ("H3", "トレンド"): 0.015}
 LABEL = {"S": "急変の反動 (流れの方向)", "H3": "東京レンジのロンドン抜け", "H4": "レンジ逆張り (流れの方向)", "H5": "指標発表直後の順張り"}
-RR_KEYS, RR_SEND = ("H4",), 3.0   # 損小利大の形なら信頼度が低くても送る作戦と、利確/損切りの倍率
+RR_KEYS, RR_SEND = ("H4",), 3.0   # 損小利大の形 (利確が損切りの3倍以上) のレンジ逆張り
+# 2026-11-25 外部レビューと遅れの再検証で根拠が崩れた (23年 +0.07R は偶然の範囲、1分足のある取引では -0.06R) → 通知はやめて記録だけ
+RR_NOTIFY = False
 
 
 def rr_guard(h: pd.DataFrame, last=40, need=10) -> tuple[bool, str]:
@@ -403,6 +405,13 @@ def run(dry=False):
             cautions = ["保有中の取引と逆向き。先に保有中を決済するか検討"] + cautions
         title, body = fmt.signal(s["side"], s["entry"], s["stop"], s.get("target"), score, reasons, cautions,
                                  f"{t.tz_convert(JST):%m/%d %H:%M} から{valid}", serious)
+        try:   # 信頼度の数字だけでは強く見えすぎるので、この作戦の過去の実績 (23年) を正直に添える
+            _ss = json.load(open(os.path.join(os.path.dirname(__file__), "..", "config", "strategy_stats.json")))["stats"].get(key)
+            if _ss:
+                body = body.replace("━━━━━━━━━━", f"過去の実績: この作戦は23年で{_ss['n']}回・勝率{_ss['win']:.0%}・1回平均{_ss['R']:+.2f}R"
+                                    f" (2016年以降 {_ss['R16']:+.2f}R)\n━━━━━━━━━━", 1)
+        except Exception:
+            pass
         if key == "S":   # 遅れを入れた再検証: 急変に付いていく取引は15分を過ぎると期待値がほぼ0になる
             body = body.replace("通知から60分を過ぎたら見送り", "通知から15分を過ぎたら見送り")
         send_at = learn.get("send_at", edge.SEND_AT)
@@ -411,7 +420,7 @@ def run(dry=False):
         # (23年で平均+0.07R・2022年以降+0.5R)。直近の成績がマイナスなら自動で止める
         rr = abs(s["target"] - s["entry"]) / max(abs(s["entry"] - s["stop"]), 1e-9) if s.get("target") else 0
         big_rr = key in RR_KEYS and rr >= RR_SEND and not serious
-        if skip and big_rr:
+        if skip and big_rr and RR_NOTIFY:
             g_ok, g_txt = rr_guard(h)
             if g_ok:
                 skip = False
