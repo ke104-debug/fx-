@@ -9,7 +9,7 @@ on:
       pair: {description: "通貨ペア (USDJPY / EURUSD / EURJPY)", default: "USDJPY"}
       start: {description: "開始日", default: "2004-01-01"}
       end: {description: "終了日", default: "2026-12-31"}
-      jobs: {description: "同時に動かす数 (最大16)", default: "16"}
+      jobs: {description: "期間をいくつに分けるか (最大16)", default: "16"}
 permissions:
   contents: write
 concurrency:
@@ -42,7 +42,8 @@ jobs:
     timeout-minutes: 300
     strategy:
       fail-fast: false
-      max-parallel: 16
+      # GitHub の同時実行は全体で20まで。監視 (5分・毎時) の分を必ず空けておくため、取得は同時8つまで
+      max-parallel: 8
       matrix:
         span: ${{ fromJSON(needs.plan.outputs.spans) }}
     steps:

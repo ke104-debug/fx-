@@ -11,6 +11,7 @@ jobs:
     timeout-minutes: 300
     strategy:
       fail-fast: false
+      max-parallel: 2
       matrix:
         pair: [EURUSD, EURJPY]
     steps:
