@@ -30,17 +30,18 @@ def _get(url, body=None, timeout=60):
     return json.load(urllib.request.urlopen(req, timeout=timeout))
 
 
-def _model(key: str) -> str:
-    """使える軽いモデル (flash) のうち新しいものを選ぶ。GEMINI_MODEL があればそれを使う"""
-    if os.getenv("GEMINI_MODEL"):
-        return os.environ["GEMINI_MODEL"]
+def _models() -> list[str]:
+    """使える軽いモデル (flash) の候補を、優先する順に並べる。GEMINI_MODEL があればそれを先頭に"""
     ms = _get(f"{API}/models?pageSize=200").get("models", [])
-    bad = ("preview", "exp", "image", "tts", "live", "audio", "embedding", "lite", "thinking", "native")
-    c = [m["name"] for m in ms if "flash" in m["name"] and "generateContent" in m.get("supportedGenerationMethods", [])
-         and not any(b in m["name"] for b in bad)]
-    if not c:
-        c = [m["name"] for m in ms if "flash" in m["name"] and "generateContent" in m.get("supportedGenerationMethods", [])]
-    return sorted(c)[-1]
+    ok = [m["name"] for m in ms if "generateContent" in m.get("supportedGenerationMethods", [])]
+    bad = ("image", "tts", "live", "audio", "embedding", "thinking", "native", "computer")
+    flash = [m for m in ok if "flash" in m and not any(b in m for b in bad)]
+    # 正式版 → lite → preview/exp の順。同じ中では新しい版を先に
+    rank = lambda m: (("preview" in m or "exp" in m) * 2 + ("lite" in m), [-int(x) if x.isdigit() else 0 for x in m.replace("-", ".").split(".")])
+    c = sorted(flash, key=rank)
+    if os.getenv("GEMINI_MODEL"):
+        c = [os.environ["GEMINI_MODEL"]] + [m for m in c if m != os.environ["GEMINI_MODEL"]]
+    return c
 
 
 def _load():
@@ -80,20 +81,31 @@ def ask(price: float, now=None) -> dict | None:
         "importance は 0〜1 (相場を大きく動かしうる度合い)。reason は日本語で40字以内、根拠にした見出しの内容を含める。"
         "見出しに無いことは推測しない。JSON だけを返す: "
         '{"roles": [{"role": "経済指標", "bias": 0.0, "importance": 0.0, "reason": ""}, ...], "summary": "全体のまとめ60字以内"}')
+    body = {"contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"}}
+    res, model, errs = None, None, []
     try:
-        model = st.get("model") or _model(key)
-        out = _get(f"{API}/{model}:generateContent", {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"}})
-        txt = out["candidates"][0]["content"]["parts"][0]["text"]
-        res = json.loads(txt)
-        res["model"] = model
-        res["n_headlines"] = len(items)
+        cands = ([st["model"]] if st.get("model") else []) + [m for m in _models() if m != st.get("model")]
     except Exception as e:
-        print("Gemini を呼べませんでした:", str(e)[:200])
-        st.update(last_ts=time.time() - 2400)    # 失敗したら20分後にもう一度だけ試せるように
+        print("Gemini のモデル一覧を取れませんでした:", str(e)[:120])
+        cands = [st["model"]] if st.get("model") else []
+    for m in cands[:4]:              # 無料枠が無い・使い切ったモデルは次の候補へ (1回の実行で4つまで)
+        try:
+            out = _get(f"{API}/{m}:generateContent", body)
+            txt = out["candidates"][0]["content"]["parts"][0]["text"]
+            res = json.loads(txt)
+            model = m
+            break
+        except Exception as e:
+            errs.append(f"{m.split('/')[-1]}: {str(e)[:60]}")
+    if res is None:
+        print("Gemini を呼べませんでした:", " / ".join(errs))
+        st.update(last_ts=time.time() - 2400, model=None)    # 20分後にもう一度だけ試せるように
+        os.makedirs(os.path.dirname(STATE) or ".", exist_ok=True)
         json.dump(st, open(STATE, "w"), ensure_ascii=False)
         return None
+    res["model"] = model
+    res["n_headlines"] = len(items)
     st = {"day": day, "count": (st.get("count", 0) if st.get("day") == day else 0) + 1, "last": f"{now:%Y-%m-%d %H:%M}",
           "last_ts": time.time(), "model": model, "result": res}
     os.makedirs(os.path.dirname(STATE) or ".", exist_ok=True)
