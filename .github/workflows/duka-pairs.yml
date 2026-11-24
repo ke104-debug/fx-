@@ -1,0 +1,43 @@
+name: 他の通貨ペアの取得 (手動)
+# ドルが強いのか円が強いのかを分けて見るため、Dukascopy の公開データから EUR/USD と EUR/JPY の
+# 1時間足 (2004〜) を取得し、data-pairs ブランチに保存する。研究用。公開リポジトリなので GitHub Actions は無料。
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: write
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        pair: [EURUSD, EURJPY]
+    steps:
+      - uses: actions/checkout@v4
+      - name: 取得
+        run: |
+          mkdir -p data/duka
+          timeout 16000 python tools/duka_download.py 2004 2027 ${{ matrix.pair }} || true
+          ls data/duka | wc -l
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pair-${{ matrix.pair }}
+          path: data/duka
+          retention-days: 7
+  save:
+    needs: download
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {path: data/duka, merge-multiple: true}
+      - name: data-pairs ブランチに保存
+        run: |
+          git config user.name "ai-fx-bot"
+          git config user.email "ai-fx-bot@users.noreply.github.com"
+          git checkout -q --orphan data-pairs-tmp
+          git rm -rq --cached . && git add -f data/duka
+          git commit -qm "Dukascopy EUR/USD・EUR/JPY 1時間足 $(ls data/duka | wc -l) ファイル"
+          git push -qf origin data-pairs-tmp:data-pairs
