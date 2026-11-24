@@ -44,9 +44,10 @@ def run(apply=True) -> list[str]:
         w0 = W.get(r.name, 0.0)
         p = _sign_p(r.n, r.hit)
         new, why = w0, ""
-        if w0 == 0 and r.n >= 80 and r.hit > 0.55 and r.pips > 3 and p < 0.05:
+        # 外部レビューの指摘: 50%台の違いを見分けるには数百件必要 → 上げるのは300件以上・偶然の確率1%未満、下げるのは200件以上
+        if w0 == 0 and r.n >= 300 and r.hit > 0.55 and r.pips > 3 and p < 0.01:
             new, why = 0.3, f"重み0だが記録で当たっている ({r.n}回・的中{r.hit:.0%}・平均{r.pips:+.1f}pips・偶然の確率{p:.1%})"
-        elif w0 > 0 and r.n >= 100 and r.pips < 0:
+        elif w0 > 0 and r.n >= 200 and r.pips < 0:
             new = 0.0 if w0 <= 0.3 else round(w0 / 2, 2)
             why = f"重みがあるのに記録で外れている ({r.n}回・平均{r.pips:+.1f}pips)"
         if new != w0:

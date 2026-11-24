@@ -357,6 +357,18 @@ def run(dry=False):
             reasons.append("過去の検証で成績の良かった値動きのパターンが発生")
         lv = views[lead]["lines"][0] if lead == "レンジ担当" else None
         if lv: reasons.append(lv.split(" / レンジ内")[0])
+        # 介入警戒: 円安けん制が段階3以上 (断固たる措置・あらゆる手段) なら、円売り方向 (ドル円の買い) の新しい合図は送らない
+        if s["side"] == 1:
+            try:
+                from .org import analysts as _an
+                _iv = _an.intervention_now(sp.headlines(query="為替介入 OR 財務官 OR 財務相", hours=48) + sp.headlines(hours=24))
+                if _iv["stage"] >= 3:
+                    print(f"(介入警戒のため買いの合図は送らない: 段階{_iv['stage']} {_iv['reason'][:40]})")
+                    log_signal(t, key, s, 0, "見送り(介入警戒)", sent=False, conditions="介入警戒")
+                    st.setdefault("sent", []).append(sig_id)
+                    continue
+            except Exception as e:
+                print("介入警戒の確認のエラー:", e)
         strength_against = False
         if key == "S":   # 急変に付いていく合図: ドルか円の強さが逆向きなら注意 (23年で成績が悪い。影の運用で記録してから止めるか判断)
             try:

@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 RISK_PCT = 1.0
-DAY_R, WEEK_R = 2.0, 4.0
+DAY_R, WEEK_R, MONTH_R = 2.0, 4.0, 8.0   # 何週間も続く連敗の目減りも区切るため、月の上限も置く
 
 
 def size(capital_yen: float, entry: float, stop: float, conf: int, risk_pct=RISK_PCT) -> dict:
@@ -45,7 +45,8 @@ def limits(h: pd.DataFrame, now=None) -> dict:
     jst = now + pd.Timedelta(hours=9)
     day0 = (jst.normalize() - pd.Timedelta(hours=9))
     week0 = day0 - pd.Timedelta(days=jst.weekday())
-    d, w = ev.R[ev.t >= day0].sum(), ev.R[ev.t >= week0].sum()
-    stop = d <= -DAY_R or w <= -WEEK_R
-    txt = f"今日 {d:+.1f}R / 今週 {w:+.1f}R (上限 日-{DAY_R:.0f}R・週-{WEEK_R:.0f}R)"
+    month0 = (jst.normalize() - pd.Timedelta(days=jst.day - 1)) - pd.Timedelta(hours=9)
+    d, w, m = ev.R[ev.t >= day0].sum(), ev.R[ev.t >= week0].sum(), ev.R[ev.t >= month0].sum()
+    stop = d <= -DAY_R or w <= -WEEK_R or m <= -MONTH_R
+    txt = f"今日 {d:+.1f}R / 今週 {w:+.1f}R / 今月 {m:+.1f}R (上限 日-{DAY_R:.0f}R・週-{WEEK_R:.0f}R・月-{MONTH_R:.0f}R)"
     return {"stop": bool(stop), "text": ("損失の上限に達したため新しく入らない: " if stop else "") + txt}

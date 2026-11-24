@@ -44,6 +44,7 @@ def signal(side: int, entry: float, stop: float, target: float | None, conf: int
         f"**損切り　: {stop:.2f}**（{pips(entry, stop, side):+d} pips）",
         f"**利確　　: {target:.2f}**（{pips(entry, target, side):+d} pips）",
         f"**信頼度　: {conf}%**　損益比 1 : {rr:.1f}",
+        f"**遅れた時: {entry + side * max(0.05, 0.3 * abs(entry - stop)):.2f} より不利なら入らない**（通知から60分を過ぎたら見送り）",
         "━━━━━━━━━━",
     ]
     if no_trade:
