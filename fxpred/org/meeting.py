@@ -301,7 +301,8 @@ def log(h: pd.DataFrame) -> dict:
            "overall": res["overall"], "verdict": res["verdict"], "caution": res["caution"],
            "risk": res["risk"]["level"], "conclusion": res["conclusion"], "conflict": res["market"]["conflict"], "secs": res["secs"],
            "AI反対意見": devil(res) if (h.index[-1].hour % 2 == 0) else "",
-           **({f"AI相談役|{u}": v for u, v in consult(res).items()} if (h.index[-1].hour % 3 == 1) else {}),
+           # 相談役は反対意見 (偶数の時) と同じ回に重ならないよう、3・9・15・21時 (UTC の足) に。1分あたりの上限を避ける
+           **({f"AI相談役|{u}": v for u, v in consult(res).items()} if (h.index[-1].hour % 6 == 3) else {}),
            "監査": "; ".join(__import__("fxpred.org.auditor", fromlist=["x"]).meeting_check(res))[:200],
            "介入けん制の段階": max([int(o.get("stage", 0)) for o in ops if "stage" in o] or [0]),
            **{o["name"]: round(o["bias"], 3) for o in ops}}
