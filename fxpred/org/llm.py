@@ -104,7 +104,9 @@ def ask(price: float, now=None) -> dict | None:
 def opinions(price: float) -> list[dict]:
     res = ask(price)
     if not res:
+        print("(AI情報) Gemini の結果なし" + ("" if os.getenv("GEMINI_API_KEY") else " (キー未設定)"))
         return []
+    print(f"(AI情報) Gemini {res.get('model', '')} 見出し{res.get('n_headlines', 0)}本: {str(res.get('summary', ''))[:60]}")
     out = []
     for r in res.get("roles", []):
         if r.get("role") in ROLES:
