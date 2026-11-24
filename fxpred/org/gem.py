@@ -123,6 +123,7 @@ def status() -> str:
 def call(job: str, prompt: str, as_json=True, temperature=0.2) -> dict | str | None:
     """Gemini に1回たずねる。無料枠の管理を通し、呼べなければ None"""
     if not allowed(job):
+        print(f"Gemini ({job}) は無料枠の管理で見送り: {status()}")
         return None
     from . import llm
     body = {"contents": [{"parts": [{"text": prompt}]}],
@@ -132,7 +133,7 @@ def call(job: str, prompt: str, as_json=True, temperature=0.2) -> dict | str | N
         cands = ([b["model"]] if b.get("model") else []) + [m for m in llm._models() if m != b.get("model")]
     except Exception:
         cands = [b["model"]] if b.get("model") else []
-    quota_hits = 0
+    quota_hits, errs = 0, []
     for m in cands[:3]:
         try:
             out = llm._get(f"{llm.API}/{m}:generateContent", body)
@@ -142,6 +143,8 @@ def call(job: str, prompt: str, as_json=True, temperature=0.2) -> dict | str | N
         except Exception as e:
             if learn(e):
                 quota_hits += 1
+            errs.append(f"{m.split('/')[-1]}: {str(e)[:80]}")
             continue
+    print(f"Gemini ({job}) を呼べませんでした:", " / ".join(errs) or "候補のモデルなし")
     note(job, ok=False, quota=quota_hits >= min(len(cands[:3]), 2) and quota_hits > 0)
     return None
