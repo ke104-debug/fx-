@@ -73,6 +73,8 @@ def review(h: pd.DataFrame, days: int, monthly: bool) -> tuple[str, str]:
         for name, c in shadow.CANDIDATES.items():
             t = c["fn"](d, **c["params"])
             t = t[t.time >= since]
+            if len(t) and "pips" not in t:          # 損益を R (損切り幅=1) で返す作戦は pips に直す
+                t = t.assign(pips=t.R * t.risk)
             lines.append(f"影の運用「{name}」: " + (f"{len(t)}回 勝率{(t.pips > 0).mean():.0%} 合計{t.pips.sum():+.0f}pips 平均{t.pips.mean():+.1f}" if len(t) else "0回"))
     except Exception as e:
         lines.append(f"影の運用: 集計できず ({e})")
