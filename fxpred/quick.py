@@ -236,6 +236,12 @@ def run(dry=False):
                     st.pop("pending_rebound", None)
         except Exception as e:  # 詳しい分析に失敗しても、簡易監視は止めない
             print("AI分析エラー:", e)
+    if not dry:   # 重要指標の実況シミュレーション (発表の65分後以降に1回だけ結果を送る)
+        try:
+            from . import eventsim
+            out += eventsim.run(bars, now)
+        except Exception as e:
+            print("指標のシミュレーションのエラー:", e)
     for title, body, color in out:
         print(title); print(body)
         if not dry:

@@ -443,6 +443,14 @@ def run(dry=False):
         from .org import meeting
         res = meeting.log(h)
         print(f"(AIの組織) {res['verdict']} {res['overall']:+.2f}")
+        try:   # 30〜90分後に重要指標があれば、予想と紙の上で試す作戦を1回だけ知らせる
+            from . import eventsim
+            fc = eventsim.forecast(h, res)
+            if fc and st.get("eventsim_fc") != fc[0]:
+                msgs.append(("info", fc[0], fc[1]))
+                st["eventsim_fc"] = fc[0]
+        except Exception as e:
+            print("指標の予想のエラー:", e)
     except Exception as e:
         print("AIの組織のエラー:", e)
     st["last_run"] = datetime.now(timezone.utc).isoformat(timespec="minutes")
