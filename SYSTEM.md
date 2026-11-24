@@ -75,6 +75,13 @@ Claude のセッション内の進み具合の通知は `discord-notify` コマ�
 - 利用者の作戦「ドル高の時代はドルの押し目が戻る」: 日足 (2004-) では 2016年以降は戻らず続く傾向 (10日後 -0.5%)。1時間足・1分足の EUR/USD・EUR/JPY で短い単位を確認中
 - **注意**: 2024-26 年のデータで何度も調整したため、この期間の成績は実力より良く見えている。運用開始 (2026-11-23) 以降の実際の成績が最終確認になる
 
+## 4.5 実際の取引の記録 (記録部隊)
+
+- 利用者の実際の約定は2つの方法で受け取る: (A) Claude に「◯時◯分 買い 159.02で約定、159.35で決済」と伝える → Claude が `journal/trades.csv` に追記してコミット。
+  (B) スマホの記録ページ https://claude.ai/artifact/3Aq5FpumVXvj5DM8TrG5ex (artifact の db の `trades`、所有者だけが書ける)。
+  GitHub の自動実行はページの記録を直接読めないので、Claude のセッションで `ArtifactData list trades` を読み、`journal/trades.csv` に写す (source=page)
+- 列: time_jst, side, entry (約定), signal_price (通知の価格), stop, lots_10k, spread_pips, exit_time_jst, exit, pips, slip_pips (+は不利), note, source
+
 ## 5. 未解決の課題・やること
 
 - **GitHub の定期実行がほとんど動かない** (24時間で予定の数%)。手動実行は確実。外部から5分ごとに実行ボタンを押す仕組み (cron-job.org 等、利用者のアカウントが必要) を相談中
