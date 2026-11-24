@@ -30,6 +30,27 @@ def ic(a: pd.Series, r: pd.Series, mask) -> tuple[float, int]:
     return float(np.corrcoef(a[k].rank(), r[k].rank())[0, 1]), int(k.sum())
 
 
+def groups(b: pd.DataFrame, th=0.6) -> list[list[str]]:
+    """意見の重複整理: 似た動きをする担当 (意見どうしの相関 |r|>th) をまとめる。会議では1グループ=1票"""
+    c = b.fillna(0).corr().abs()
+    names, seen, out = list(b.columns), set(), []
+    for n in names:
+        if n in seen:
+            continue
+        g = [m for m in names if m not in seen and c.loc[n, m] > th]
+        seen |= set(g)
+        if len(g) > 1:
+            out.append(g)
+    return out
+
+
+def save_groups(new: list[list[str]], prefix_keep=()):
+    allw = json.load(open(W_PATH)) if os.path.exists(W_PATH) else {"weights": {}}
+    old = [g for g in allw.get("groups", []) if any(x.split("|")[0] in prefix_keep for x in g)]
+    allw["groups"] = old + new
+    json.dump(allw, open(W_PATH, "w"), ensure_ascii=False, indent=1)
+
+
 def build(h: pd.DataFrame):
     uj = dt.usdjpy_jst10(h)
     x = dt.at_jst10(dt.fetch(max_age_h=0), uj.index)

@@ -32,8 +32,14 @@ def run(apply=True) -> list[str]:
     W = allw.setdefault("weights", {})
     msgs, rows = [], []
     now = pd.Timestamp.now(tz="Asia/Tokyo").strftime("%Y-%m-%d")
+    # 過学習を防ぐ決まり: 同じ担当の重みは4週間に1回まで、1回の変化は0.3まで (上げる時)
+    try:
+        past = pd.read_csv(DEC)
+        recent = set(past[pd.to_datetime(past.date) >= pd.Timestamp(now) - pd.Timedelta(days=28)].name)
+    except Exception:
+        recent = set()
     for r in s.itertuples():
-        if r.name.startswith("統括AI"):
+        if r.name.startswith("統括AI") or r.name in recent:
             continue
         w0 = W.get(r.name, 0.0)
         p = _sign_p(r.n, r.hit)

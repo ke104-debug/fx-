@@ -281,8 +281,26 @@ def run(dry=False):
             side, stop, tgt, trail = r
             sigs.append((key, dict(side=side, entry=h.Close.iat[n], stop=stop, target=tgt, note=EXIT_TEXT.get(trail, "損切りか利確まで保有"))))
     is_awake = awake(pd.Timestamp.now(tz="UTC"), rg.st.events(h.index[-200:]))
-    ctx = context(h) if (sigs or anom.get("level")) else None
     now = pd.Timestamp.now(tz="UTC")
+    # データ監視部隊・資金管理部隊: データの異常や損失の上限なら、新しく入る合図は送らない (1日1回だけ知らせる)
+    try:
+        from .org import health as _hl, money as _mn
+        hc, lm = _hl.check(h, now), _mn.limits(h, now)
+        block = (not hc["ok"]) or lm["stop"]
+        if block and sigs:
+            why = hc["problems"] + ([lm["text"]] if lm["stop"] else [])
+            print("(新しく入らない) " + " / ".join(why))
+            k = f"block-{(now + pd.Timedelta(hours=9)):%Y%m%d}"
+            if st.get("block_key") != k:
+                msgs.append(("wait", "⛔ 新しく入らない (データ監視・資金管理)", "\n".join("・" + x for x in why) +
+                             "\n合図は出ていますが送りません。保有中の決済の通知は続けます。"))
+                st["block_key"] = k
+            for key, s_ in sigs:
+                log_signal(t, key, s_, 0, "見送り(停止中)", sent=False, conditions="停止中")
+            sigs = []
+    except Exception as e:
+        print("データ監視・資金管理のエラー:", e)
+    ctx = context(h) if (sigs or anom.get("level")) else None
     for key, s in sigs:
         sig_id = f"{key}-{t:%Y%m%d%H}"
         if sig_id in st.get("sent", []):
@@ -317,6 +335,9 @@ def run(dry=False):
             reasons.append("過去の検証で成績の良かった値動きのパターンが発生")
         lv = views[lead]["lines"][0] if lead == "レンジ担当" else None
         if lv: reasons.append(lv.split(" / レンジ内")[0])
+        from . import positions as _pp
+        if key in _pp.TRAIL:
+            reasons.append("出口: 利確の値は目安。伸ばす取引なので、1R進んだら損切りを引き上げ続ける (その都度通知)")
         cautions = [x for x in ng if not x.startswith("作戦シグナル")] + stop_why
         exit_h = {"eod": "本日 朝5時まで", "24h": "24時間", None: "48時間"}
         valid = EXIT_VALID.get(key, "48時間")
@@ -356,7 +377,7 @@ def run(dry=False):
         if not serious and not dry:
             from . import positions
             tg = s["target"] if s.get("target") else s["entry"] + s["side"] * 2 * abs(s["entry"] - s["stop"])
-            positions.add(s["side"], s["entry"], s["stop"], tg, key, int(t.timestamp()) + 3600)
+            positions.add(s["side"], s["entry"], s["stop"], tg, key, int(t.timestamp()) + 3600, atr=float(h.atr.iat[n]))
         st.setdefault("sent", []).append(sig_id)
         st["sent"] = st["sent"][-200:]
     try:

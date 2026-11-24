@@ -59,5 +59,15 @@ def check(h: pd.DataFrame, ops: list[dict] | None = None, now=None) -> dict:
                 items.append((1, "連敗監視", f"送ったシグナルが{streak}連敗中 (相場が合っていない可能性)"))
     except Exception:
         pass
+    # データ監視部隊・資金管理部隊の停止は「警戒」
+    try:
+        from . import health, money
+        for x in health.check(h, now)["problems"]:
+            items.append((2, "データ監視", x))
+        lm = money.limits(h, now)
+        if lm["stop"]:
+            items.append((2, "資金管理", lm["text"]))
+    except Exception:
+        pass
     lvl = max([w for w, _, _ in items], default=0)
     return {"level": ["通常", "注意", "警戒"][lvl], "items": [(who, why) for _, who, why in items]}

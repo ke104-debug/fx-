@@ -105,8 +105,23 @@ def _reason(k: str, x: pd.DataFrame) -> str:
 
 
 def decide(ops: list[dict], w: dict | None = None) -> dict:
-    """部門ごとに重み付き平均 → 統括。戻り値: 全体の向き・確からしさ・部門の結論・参考意見"""
-    w = weights() if w is None else w
+    """方向の会議 (全統括AIの計算方法):
+      1) 各担当の意見 b (-1〜+1) と重み w (検証部隊が23年・実際の記録で決めた値。0なら判断に入れない)
+      2) 重複整理: 意見がよく似た担当のグループ (config の groups、相関0.6超) は、重みのある人数で重みを割る (グループで1票分)
+      3) 部隊ごとの点数 = Σ(w×b) / Σw、全体 = 全担当の Σ(w×b) / Σw (重みの多い部隊ほど強く効く)
+      4) 全体が +0.25 以上で買い寄り、-0.25 以下で売り寄り、それ以外は中立
+      5) 意見が無い担当 (Gemini が答えない時など) は分子・分母の両方から外れる (黙った担当で結論が偏らない)
+    その後 final() で、作戦部隊の合図・リスク管理部隊 (データ監視・資金管理を含む) の判定と合わせて最終結論を出す"""
+    w = dict(weights() if w is None else w)
+    try:
+        grp = json.load(open(W_PATH)).get("groups", [])
+    except Exception:
+        grp = []
+    present = {o["name"] for o in ops}
+    for g in grp:
+        live = [n for n in g if w.get(n, 0) > 0 and n in present]
+        for n in live:
+            w[n] = w[n] / len(live)
     dept = {}
     for o in ops:
         sec = o["name"].split("|")[0]
