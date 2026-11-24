@@ -21,7 +21,7 @@ LOG = os.path.join(ROOT, "journal", "org.csv")
 DEPTS = {"相場分析": "相場分析部隊", "強さ": "相場分析部隊", "テクニカル": "相場分析部隊", "ローソク足": "相場分析部隊",
          "チャートパターン": "相場分析部隊", "サポレジ": "相場分析部隊", "マルチタイム": "相場分析部隊", "ボラティリティ": "相場分析部隊",
          "市場構造": "相場分析部隊", "AI情報": "情報解析部隊", "金融政策": "情報解析部隊", "他市場": "情報解析部隊", "センチメント": "情報解析部隊",
-         "経済指標": "情報解析部隊", "ニュース": "情報解析部隊", "地政学": "情報解析部隊"}
+         "経済指標": "情報解析部隊", "ニュース": "情報解析部隊", "地政学": "情報解析部隊", "需給": "情報解析部隊"}
 
 
 def weights() -> dict:
@@ -72,6 +72,25 @@ def opinions(h: pd.DataFrame, now=None) -> list[dict]:
         ops += llm.opinions(float(h.Close.iat[-1]))
     except Exception as e:
         print("AI情報のエラー:", e)
+    # 需給の担当 (23年の検証では偏りが小さく、判断には使わない。今日の需給の出来事を伝えるだけ)
+    try:
+        from .. import quest
+        j = now + pd.Timedelta(hours=9)
+        ev = []
+        jd = j.normalize().tz_localize(None)
+        month = pd.date_range(jd.replace(day=1), jd + pd.offsets.MonthEnd(0), freq="D", tz="UTC") - pd.Timedelta(hours=9) + pd.Timedelta(hours=12)
+        if jd in quest.gotobi_days(month):
+            ev.append("五十日 (仲値9:55に向けたドル買い。2023年以降はほぼ効いていない)")
+        ld = now.tz_convert("Europe/London")
+        nxt = [ld.normalize() + pd.Timedelta(days=k) for k in range(1, 5)]
+        if ld.weekday() < 5 and all(d.month != ld.month or d.weekday() >= 5 for d in nxt):
+            ev.append("月末 (ロンドン16時のフィキシングで売買が集中。直後に戻りやすい傾向は弱い)")
+        ny = now.tz_convert("America/New_York")
+        if ny.weekday() < 5 and 8 <= ny.hour < 10:
+            ev.append("NYカット (NY10時) 前。大口オプションの価格に吸い寄せられることがある")
+        ops.append(dict(name="需給|今日の需給の出来事", bias=0.0, reason=" / ".join(ev) if ev else "目立つ需給の出来事なし"))
+    except Exception:
+        pass
     o = an.events_now(now)
     ops.append(dict(name="経済指標|重要指標の予定", bias=0.0, reason=o["reason"], caution=o.get("caution", False)))
     return ops
@@ -184,7 +203,7 @@ def text(res: dict) -> str:
         L.append(f"【{d}】{sc}")
         for o in g["voters"]:
             L.append(f"  ・{o['name'].split('|')[1]} {o['bias']:+.2f} … {o['reason']}")
-        pri = lambda o: (0 if o["name"].startswith("AI情報") else 1 if o["name"].split("|")[0] in ("ニュース", "地政学", "経済指標") else 2)
+        pri = lambda o: (0 if o["name"].startswith("AI情報") else 1 if o["name"].split("|")[0] in ("ニュース", "地政学", "経済指標", "需給") else 2)
         for o in sorted([o for o in g["notes"] if o.get("reason") and o["reason"] != "合図あり"], key=pri)[:6]:
             L.append(f"  (参考) {o['name'].split('|')[1]} … {o['reason']}")
     return "\n".join(L)
