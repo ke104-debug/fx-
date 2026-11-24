@@ -93,7 +93,7 @@ def ask(price: float, now=None) -> dict | None:
         '"intervention_stage": 0, "news_time": "MM/DD HH:MM"}')
     body = {"contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"}}
-    res, model, errs = None, None, []
+    res, model, errs, tokens = None, None, [], 0
     try:
         cands = ([st["model"]] if st.get("model") else []) + [m for m in _models() if m != st.get("model")]
     except Exception as e:
@@ -105,10 +105,11 @@ def ask(price: float, now=None) -> dict | None:
             txt = out["candidates"][0]["content"]["parts"][0]["text"]
             res = json.loads(txt)
             model = m
+            tokens = out.get("usageMetadata", {}).get("totalTokenCount", 0)
             break
         except Exception as e:
-            errs.append(f"{m.split('/')[-1]}: {str(e)[:60]}")
-    gem.note("ニュース", ok=res is not None, model=model,
+            errs.append(f"{m.split('/')[-1]}: {'429 ' if gem.learn(e) else ''}{str(e)[:60]}")
+    gem.note("ニュース", ok=res is not None, model=model, tokens=tokens,
              quota=res is None and sum("429" in e for e in errs) >= 2)
     if res is None:
         print("Gemini を呼べませんでした:", " / ".join(errs))
