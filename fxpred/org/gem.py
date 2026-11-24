@@ -50,6 +50,14 @@ def limit() -> int:
     except Exception:
         b = {}
     if b.get("learned_rpd"):
+        if b.get("models_day") != _day() and os.getenv("GEMINI_API_KEY"):
+            try:   # 使えるモデルの数を1日1回数える (モデル一覧の取得は無料枠の回数に入らない)
+                from . import llm
+                b = _load()
+                b["n_models"], b["models_day"] = len(llm._models()), _day()
+                _save(b)
+            except Exception:
+                pass
         return int(b["learned_rpd"]) * max(1, int(b.get("n_models", 1)))
     return DAILY_CAP
 
