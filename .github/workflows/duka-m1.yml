@@ -1,29 +1,73 @@
 name: 1分足データの取得 (手動)
-# Dukascopy の公開データ (USD/JPY 1分足 2004〜) を、期間を分けて同時に取得し、data-m1 ブランチに年ごとに保存する。
-# 研究 (短い足の作戦の検証) 用。公開リポジトリなので GitHub Actions は無料。
+# Dukascopy の公開データ (1分足) を、期間を分けて同時に取得し、data ブランチに年ごとに保存する。
+# 研究 (短い足の作戦・ドルと円の強さの検証) 用。公開リポジトリなので GitHub Actions は無料。
+# 接続制限で1回では取り切れないので、取得済みの日は飛ばして続きから取る (何回でも実行できる)。
+# USDJPY → data-m1 ブランチ、それ以外 → data-m1-<ペア小文字> ブランチ
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      pair: {description: "通貨ペア (USDJPY / EURUSD / EURJPY)", default: "USDJPY"}
+      start: {description: "開始日", default: "2004-01-01"}
+      end: {description: "終了日", default: "2026-12-31"}
+      jobs: {description: "同時に動かす数 (最大16)", default: "16"}
 permissions:
   contents: write
+concurrency:
+  group: duka-m1-${{ inputs.pair }}
+  cancel-in-progress: false
+env:
+  BRANCH: ${{ inputs.pair == 'USDJPY' && 'data-m1' || format('data-m1-{0}', inputs.pair) }}
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      spans: ${{ steps.p.outputs.spans }}
+    steps:
+      - id: p
+        run: |
+          python3 - <<'PY' >> $GITHUB_OUTPUT
+          import json
+          from datetime import date, timedelta
+          a, b, n = date.fromisoformat("${{ inputs.start }}"), date.fromisoformat("${{ inputs.end }}"), min(int("${{ inputs.jobs }}"), 16)
+          step = ((b - a).days + n) // n
+          spans = []
+          while a <= b:
+              e = min(a + timedelta(step - 1), b)
+              spans.append(f"{a}:{e}"); a = e + timedelta(1)
+          print("spans=" + json.dumps(spans))
+          PY
   download:
+    needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
       fail-fast: false
-      max-parallel: 8
+      max-parallel: 16
       matrix:
-        span: ["2004-01-01:2006-12-31", "2007-01-01:2009-12-31", "2010-01-01:2012-12-31", "2013-01-01:2015-12-31",
-               "2016-01-01:2018-12-31", "2019-01-01:2021-06-30", "2021-07-01:2023-12-31", "2024-01-01:2026-12-31"]
+        span: ${{ fromJSON(needs.plan.outputs.spans) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.13"}
       - run: pip install -q numpy==2.5.3
+      - name: 取得済みの日を調べる
+        run: |
+          mkdir -p old
+          git fetch -q origin $BRANCH 2>/dev/null && git archive FETCH_HEAD m1 | tar -x -C old || true
+          python3 - <<'PY'
+          import glob, numpy as np
+          days = set()
+          for f in glob.glob("old/m1/${{ inputs.pair }}_*.npz"):
+              t = np.load(f)["t"]
+              d, cnt = np.unique(t // 86400, return_counts=True)
+              days |= {str(np.datetime64(int(x), "D")) for x in d[cnt >= 200]}
+          open("have.txt", "w").write("\n".join(sorted(days)))
+          print(len(days), "days already")
+          PY
       - name: 取得
         run: |
           IFS=: read A B <<< "${{ matrix.span }}"
-          python tools/duka_m1.py $A $B m1_${A}.npz 15500
+          python tools/duka_m1.py $A $B m1_${A}.npz 15500 have.txt ${{ inputs.pair }}
       - uses: actions/upload-artifact@v4
         with:
           name: m1-${{ strategy.job-index }}
@@ -40,26 +84,27 @@ jobs:
       - run: pip install -q numpy==2.5.3
       - uses: actions/download-artifact@v4
         with: {path: parts, merge-multiple: true}
-      - name: 年ごとに分けて data-m1 ブランチに保存
+      - name: 年ごとに分けて保存
         run: |
-          git fetch -q origin data-m1 && git archive origin/data-m1 m1 | tar -x || mkdir -p m1
+          mkdir -p m1
+          git fetch -q origin $BRANCH 2>/dev/null && git archive FETCH_HEAD m1 | tar -x || true
           python3 - <<'PY'
           import glob, os, numpy as np
-          os.makedirs("m1", exist_ok=True)
+          P = "${{ inputs.pair }}"
           new = [np.load(f) for f in glob.glob("parts/*.npz")]
-          old = [np.load(f) for f in glob.glob("m1/*.npz")]
+          old = [np.load(f) for f in glob.glob(f"m1/{P}_*.npz")]
           cols = "tochl"
           allp = {k: np.concatenate([z[k] for z in old + new]) for k in cols}
           t, idx = np.unique(allp["t"], return_index=True)
           yr = (t // 86400 // 365.2425 + 1970).astype(int)
           for y in np.unique(yr):
               m = yr == y
-              np.savez_compressed(f"m1/USDJPY_{y}.npz", **{k: (t if k == "t" else allp[k][idx])[m] for k in cols})
+              np.savez_compressed(f"m1/{P}_{y}.npz", **{k: (t if k == "t" else allp[k][idx])[m] for k in cols})
               print(y, int(m.sum()))
           PY
           git config user.name "ai-fx-bot"
           git config user.email "ai-fx-bot@users.noreply.github.com"
-          git checkout -q --orphan data-m1-tmp
+          git checkout -q --orphan tmp-save
           git rm -rq --cached . && git add -f m1
-          git commit -qm "Dukascopy USD/JPY 1分足 $(ls m1 | wc -l) 年分"
-          git push -qf origin data-m1-tmp:data-m1
+          git commit -qm "Dukascopy ${{ inputs.pair }} 1分足 $(ls m1 | wc -l) 年分"
+          git push -qf origin tmp-save:$BRANCH
