@@ -4,7 +4,7 @@
 費用を出さないための決まり:
 - キー (GitHub の Secret `GEMINI_API_KEY`) が無ければ何もしない
 - 支払い方法を登録していない Google のプロジェクトのキーを使う (無料枠を超えると失敗するだけで、請求は起きない)
-- 呼ぶのは1時間に1回まで・1日 MAX_PER_DAY 回まで (state/gemini.json で数える)
+- 呼ぶのは1時間に1回まで・1日 MAX_PER_DAY 回まで (state/gemini.json)。ほかの仕事と合わせた無料枠の管理は gem.py
 - 送るのは公開ニュースの見出しと、ドル円の価格だけ (利用者の情報は送らない)
 重みは記録を始めた日から検証部が採点して決める (それまでは0 = 説明にだけ使う)。"""
 import json
@@ -62,6 +62,9 @@ def ask(price: float, now=None) -> dict | None:
     day = f"{now:%Y-%m-%d}"
     if st.get("last") and time.time() - st.get("last_ts", 0) < 3300:
         return st.get("result")
+    from . import gem
+    if not gem.allowed("ニュース"):          # 無料枠の管理 (gem.py) で止められている
+        return st.get("result") if time.time() - st.get("last_ts", 0) < 3 * 3600 else None
     if st.get("day") == day and st.get("count", 0) >= MAX_PER_DAY:
         return st.get("result") if time.time() - st.get("last_ts", 0) < 3 * 3600 else None
     items, seen = [], set()
@@ -105,6 +108,8 @@ def ask(price: float, now=None) -> dict | None:
             break
         except Exception as e:
             errs.append(f"{m.split('/')[-1]}: {str(e)[:60]}")
+    gem.note("ニュース", ok=res is not None, model=model,
+             quota=res is None and sum("429" in e for e in errs) >= 2)
     if res is None:
         print("Gemini を呼べませんでした:", " / ".join(errs))
         st.update(last_ts=time.time() - 2400, model=None)    # 20分後にもう一度だけ試せるように

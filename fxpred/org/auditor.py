@@ -97,6 +97,12 @@ def audit(h: pd.DataFrame, now=None, res: dict | None = None) -> list[str]:
     except Exception:
         if os.getenv("GEMINI_API_KEY"):
             out.append("Gemini の情報AIの記録がない")
+    try:
+        from . import gem
+        if "停止中" in gem.status():
+            out.append("Gemini の無料枠を今日は使い切った (AIの情報・反対意見・急変の原因の推定が止まっている)")
+    except Exception:
+        pass
     # 合わせ込みの危険
     try:
         dec = pd.read_csv(os.path.join(ROOT, "journal", "org_decisions.csv"))

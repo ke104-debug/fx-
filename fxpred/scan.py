@@ -244,6 +244,27 @@ def quick_chance(trigger, price):
     return title, body, (16776960 if serious else 5763719), pos
 
 
+def _ai_cause(anom: dict, h) -> str:
+    """急変の原因を Gemini (無料枠) に見出しから推定させる。呼べなければ空"""
+    try:
+        from .org import gem
+        heads = sp.headlines(hours=3)[:25]
+        if not heads:
+            return ""
+        lines = "\n".join(f"- {(x['time'] + pd.Timedelta(hours=9)):%H:%M} {x['title']}" for x in heads)
+        r = gem.call("急変の原因", f"ドル円が急に{'上がった' if anom.get('move', 0) > 0 else '下がった'} (今 {h.Close.iat[-1]:.2f})。"
+                     f"直近3時間の見出し:\n{lines}\n見出しだけから原因を推定する。JSON だけ: "
+                     '{"cause": "原因30字以内 (分からなければ不明)", "intervention": 0〜1 (為替介入の可能性), '
+                     '"follow": "続きやすい/戻りやすい/不明", "why": "30字以内"}')
+        if not isinstance(r, dict):
+            return ""
+        return (f"【AIの推定 (Gemini)】原因: {r.get('cause', '不明')} / 介入の可能性 {float(r.get('intervention', 0)):.0%} / "
+                f"{r.get('follow', '不明')} ({r.get('why', '')})\n\n")
+    except Exception as e:
+        print("急変の原因の推定のエラー:", e)
+        return ""
+
+
 def run(dry=False):
     h = rg.prepare(load_recent())
     n = len(h) - 1
@@ -264,6 +285,7 @@ def run(dry=False):
         msgs.append(("wait", f"⚠️ {'急騰' if anom['move'] > 0 else '急落'} USD/JPY {h.Close.iat[n]:.2f} ({anom['level']})",
                      f"USD/JPY {h.Close.iat[n]:.2f}円。{anom['text']}。\n\n【急変担当の見立て】\n" +
                      "\n".join("・" + x for x in sp.shock_view(h, anom, sp.headlines(hours=6))["lines"]) + "\n\n"
+                     + _ai_cause(anom, h) +
                      "まだ入らないでください。原因 (介入・指標・要人発言・リスク回避) の確認をおすすめします。\n"
                      "流れの方向へ戻る下げ止まり (上げ止まり) を確認したら、反動狙いのシグナルを送ります。"))
         st["alert_key"] = f"{anom['level']}-{t:%Y-%m-%d}"

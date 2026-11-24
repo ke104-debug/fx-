@@ -124,6 +124,18 @@ def review(h: pd.DataFrame, days: int, monthly: bool) -> tuple[str, str]:
         lines += ["", "**シミュレーション・検証部隊 (進言の再検証)**"] + [f"・{x}" for x in org_review.run()]
         from .org import postmortem
         lines += ["", "**原因究明部隊**"] + [f"・{x}" for x in postmortem.run(h)]
+        try:
+            from .org import gem
+            ai = gem.call("週次の振り返り", "FX (ドル円) の自動売買チームの週次の振り返り。以下の記録だけを根拠に、来週試すべき改善案を3つ、"
+                          "それぞれ40字以内で出す。過去に合わせ込むだけの案は避け、確かめ方も一言添える。JSON だけ: {\"ideas\": [\"\", \"\", \"\"]}\n\n"
+                          + "\n".join(lines)[-3000:])
+            if isinstance(ai, dict) and ai.get("ideas"):
+                lines += ["", "**改善案 (Gemini。提案として検証部隊へ)**"] + [f"・{str(x)[:80]}" for x in ai["ideas"][:3]]
+                from .org import proposals
+                for x in ai["ideas"][:3]:
+                    proposals.add("改善研究部隊 (Gemini)", str(x)[:80], built_on="週次の記録", status="提案")
+        except Exception as e:
+            print("週次の改善案のエラー:", e)
         lines += ["", "**監査AI (問題点)**"] + [f"・{x}" for x in auditor.audit(h, res=_meeting_safe(h))]
     except Exception as e:
         print("進言AIのエラー:", e)

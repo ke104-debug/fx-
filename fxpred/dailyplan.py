@@ -244,6 +244,13 @@ def morning_message(h: pd.DataFrame, a: dict, fc: dict, reviews: list[dict], lea
         if summ:
             lines.append(f"・情報解析部隊 (AI): {summ[0]}")
         lines.append(f"・監査AI: {auditor.audit(h, res=res)[0]}")
+        from .org import gem
+        ai = gem.call("朝の見立て", "ドル円の今日の見立てを、以下の会議の内容と指標の予定だけから日本語で3行 (各40字以内) で書く。"
+                      "1行目: 今日の相場の見どころ、2行目: 気をつける時間と材料、3行目: 入るならどんな形か (入らない方がよければそう書く)。"
+                      "数字は会議にあるものだけ使う。JSON だけ: {\"lines\": [\"\", \"\", \"\"]}\n\n" + meeting.text(res)[:2500])
+        if isinstance(ai, dict) and ai.get("lines"):
+            lines += ["・AIの見立て (Gemini):"] + [f"　{str(x)[:60]}" for x in ai["lines"][:3]]
+        lines.append(f"・{gem.status()}")
     except Exception as e:
         print("AIの組織のエラー:", e)
     try:

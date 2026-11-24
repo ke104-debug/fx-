@@ -269,6 +269,18 @@ def text(res: dict) -> str:
     return "\n".join(L)
 
 
+def devil(res: dict) -> str:
+    """Gemini に会議の結論への反対意見 (一番強い反論と、外れるならどんな時か) を出させる。監査AIの材料"""
+    from . import gem
+    r = gem.call("反対意見", "あなたは為替 (ドル円) の取引チームの監査役。以下の会議の結論に、遠慮なく一番強い反論をする。"
+                 "根拠は会議の中身とニュースのまとめだけ。JSON だけを返す: "
+                 '{"counter": "反論60字以内", "risk": "結論が外れるとしたらどんな時か40字以内", "strength": 0〜2 の整数 (反論の強さ)}\n\n'
+                 + text(res)[:2500])
+    if not isinstance(r, dict):
+        return ""
+    return f"[{r.get('strength', '?')}] {str(r.get('counter', ''))[:80]} / 外れる時: {str(r.get('risk', ''))[:60]}"
+
+
 def log(h: pd.DataFrame) -> dict:
     """影の運用: 会議の結果を journal/org.csv に1時間1行で残す (通知はしない)"""
     res = final(h)
@@ -276,6 +288,7 @@ def log(h: pd.DataFrame) -> dict:
     row = {"time_utc": f"{h.index[-1] + pd.Timedelta(hours=1):%Y-%m-%d %H:%M}", "price": round(float(h.Close.iat[-1]), 3),
            "overall": res["overall"], "verdict": res["verdict"], "caution": res["caution"],
            "risk": res["risk"]["level"], "conclusion": res["conclusion"], "conflict": res["market"]["conflict"], "secs": res["secs"],
+           "AI反対意見": devil(res) if (h.index[-1].hour % 2 == 0) else "",
            "監査": "; ".join(__import__("fxpred.org.auditor", fromlist=["x"]).meeting_check(res))[:200],
            "介入けん制の段階": max([int(o.get("stage", 0)) for o in ops if "stage" in o] or [0]),
            **{o["name"]: round(o["bias"], 3) for o in ops}}
