@@ -10,9 +10,11 @@ import pandas as pd
 DIR = os.path.join(os.path.dirname(__file__), "..", "data", "duka")
 
 
-def load(start="2004-01-01") -> pd.DataFrame:
+def load(start="2004-01-01", pair="USDJPY") -> pd.DataFrame:
+    """pair: USDJPY / EURUSD / EURJPY など。円のペアは価格x1000、それ以外は価格x100000 で記録されている"""
+    sc = 1000 if pair.endswith("JPY") else 100000
     rows = []
-    for f in sorted(glob.glob(os.path.join(DIR, "USDJPY_*_BID_hour.bi5"))):
+    for f in sorted(glob.glob(os.path.join(DIR, f"{pair}_*_BID_hour.bi5"))):
         if os.path.getsize(f) == 0:
             continue
         _, y, m, *_ = os.path.basename(f).split("_")
@@ -21,6 +23,6 @@ def load(start="2004-01-01") -> pd.DataFrame:
         for i in range(len(b) // 24):
             t, o, c, l, h, v = struct.unpack(">5if", b[i * 24:(i + 1) * 24])
             if v > 0:  # 市場が閉まっている時間 (出来高0) は除く
-                rows.append((base + pd.Timedelta(seconds=t), o / 1000, h / 1000, l / 1000, c / 1000))
+                rows.append((base + pd.Timedelta(seconds=t), o / sc, h / sc, l / sc, c / sc))
     d = pd.DataFrame(rows, columns=["time", "Open", "High", "Low", "Close"]).set_index("time")
     return d[d.index >= pd.Timestamp(start, tz="UTC")].sort_index()
