@@ -324,6 +324,12 @@ def run(dry=False):
             print(f"(影の運用) {x['strategy']} {'買い' if x['side'] == 1 else '売り'} {x['entry']}")
     except Exception as e:
         print("影の運用のエラー:", e)
+    try:   # AI の組織 (影の運用: 記録だけ。通知は変えない)
+        from .org import meeting
+        res = meeting.log(h)
+        print(f"(AIの組織) {res['verdict']} {res['overall']:+.2f}")
+    except Exception as e:
+        print("AIの組織のエラー:", e)
     st["last_run"] = datetime.now(timezone.utc).isoformat(timespec="minutes")
     st["last_bar"] = f"{t:%Y-%m-%d %H:%M}"
     st["price"] = round(float(h.Close.iat[n]), 3)
