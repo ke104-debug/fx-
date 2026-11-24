@@ -137,3 +137,21 @@ def audit(h: pd.DataFrame, now=None, res: dict | None = None) -> list[str]:
 if __name__ == "__main__":
     from .. import scan
     print("\n".join(audit(scan.load_recent())))
+
+
+def ai_audit(findings: list[str], res: dict | None) -> list[str]:
+    """監査AIの補助 (Gemini 無料枠): 監査AIの指摘と会議の中身を読ませ、見落としている問題点を最大3つ挙げさせる。
+    ルールで見つけた指摘と重ならないものだけ。良い点は言わせない"""
+    try:
+        from . import gem
+        from .meeting import text
+        body = ("あなたは FX (ドル円) の売買判断チームの監査役の補佐。良い点は言わず、問題点だけを挙げる。"
+                "以下の「監査AIの指摘」に無い問題を、会議の中身から最大3つ、各50字以内で。根拠の無い推測はしない。"
+                '問題が無ければ空の配列。JSON だけ: {"issues": ["", ""]}\n\n【監査AIの指摘】\n'
+                + "\n".join(findings[:8]) + "\n\n【会議の中身】\n" + (text(res)[:2500] if res else "なし"))
+        r = gem.call("監査の補助", body)
+        if isinstance(r, dict):
+            return [f"(AI) {str(x)[:70]}" for x in r.get("issues", [])[:3] if str(x).strip()]
+    except Exception as e:
+        print("監査の補助のエラー:", e)
+    return []

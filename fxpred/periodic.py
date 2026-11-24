@@ -136,7 +136,9 @@ def review(h: pd.DataFrame, days: int, monthly: bool) -> tuple[str, str]:
                     proposals.add("改善研究部隊 (Gemini)", str(x)[:80], built_on="週次の記録", status="提案")
         except Exception as e:
             print("週次の改善案のエラー:", e)
-        lines += ["", "**監査AI (問題点)**"] + [f"・{x}" for x in auditor.audit(h, res=_meeting_safe(h))]
+        _res = _meeting_safe(h)
+        _found = auditor.audit(h, res=_res)
+        lines += ["", "**監査AI (問題点)**"] + [f"・{x}" for x in _found + auditor.ai_audit(_found, _res)]
     except Exception as e:
         print("進言AIのエラー:", e)
     title = f"📊 {'月次' if monthly else '週次'}の見直し USD/JPY ({(since + timedelta(days=1)).tz_convert(dp.JST):%m/%d}〜{h.index[-1].tz_convert(dp.JST):%m/%d})"

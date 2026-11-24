@@ -281,6 +281,18 @@ def devil(res: dict) -> str:
     return f"[{r.get('strength', '?')}] {str(r.get('counter', ''))[:80]} / 外れる時: {str(r.get('risk', ''))[:60]}"
 
 
+ADVISED = ("情報解析部隊", "相場分析部隊", "市場判断統括", "リスク統括")
+
+
+def consult(res: dict) -> dict:
+    """相談役AI (Gemini 無料枠): 各部隊・統括の結論に、見落とし・弱い根拠・確かめるべきことを1つずつ助言させる (1回の呼び出しでまとめて)"""
+    from . import gem
+    r = gem.call("相談役", "あなたは FX (ドル円) の売買判断チームの各部隊の相談役。以下の会議の中身を読み、部隊ごとに"
+                 "「結論の弱いところ・見落とし・次に確かめるべきこと」を1つ、各50字以内で助言する。根拠は会議の中身だけ。"
+                 "JSON だけ: {" + ", ".join(f'"{u}": ""' for u in ADVISED) + "}\n\n" + text(res)[:2800])
+    return {u: str(r.get(u, ""))[:80] for u in ADVISED} if isinstance(r, dict) else {}
+
+
 def log(h: pd.DataFrame) -> dict:
     """影の運用: 会議の結果を journal/org.csv に1時間1行で残す (通知はしない)"""
     res = final(h)
@@ -289,6 +301,7 @@ def log(h: pd.DataFrame) -> dict:
            "overall": res["overall"], "verdict": res["verdict"], "caution": res["caution"],
            "risk": res["risk"]["level"], "conclusion": res["conclusion"], "conflict": res["market"]["conflict"], "secs": res["secs"],
            "AI反対意見": devil(res) if (h.index[-1].hour % 2 == 0) else "",
+           **({f"AI相談役|{u}": v for u, v in consult(res).items()} if (h.index[-1].hour % 3 == 1) else {}),
            "監査": "; ".join(__import__("fxpred.org.auditor", fromlist=["x"]).meeting_check(res))[:200],
            "介入けん制の段階": max([int(o.get("stage", 0)) for o in ops if "stage" in o] or [0]),
            **{o["name"]: round(o["bias"], 3) for o in ops}}
