@@ -4,3 +4,7 @@ data/
 state/
 reports/_*
 data/m1/
+
+# 利用者の実際の取引 (個人の情報。公開リポジトリには入れない)
+journal/trades*.csv
+data/private/

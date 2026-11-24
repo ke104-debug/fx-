@@ -77,10 +77,11 @@ Claude のセッション内の進み具合の通知は `discord-notify` コマ�
 
 ## 4.5 実際の取引の記録 (記録部隊)
 
-- 利用者の実際の約定は2つの方法で受け取る: (A) Claude に「◯時◯分 買い 159.02で約定、159.35で決済」と伝える → Claude が `journal/trades.csv` に追記してコミット。
-  (B) スマホの記録ページ https://claude.ai/artifact/3Aq5FpumVXvj5DM8TrG5ex (artifact の db の `trades`、所有者だけが書ける)。
-  GitHub の自動実行はページの記録を直接読めないので、Claude のセッションで `ArtifactData list trades` を読み、`journal/trades.csv` に写す (source=page)
-- 列: time_jst, side, entry (約定), signal_price (通知の価格), stop, lots_10k, spread_pips, exit_time_jst, exit, pips, slip_pips (+は不利), note, source
+- **リポジトリは公開なので、利用者の実際の取引 (約定・損益・数量) は絶対にコミットしない** (`.gitignore` で journal/trades*.csv と data/private/ を除外)
+- 受け取り方: (A) Claude に伝える / SBI の約定 CSV をチャットに添付 → セッションの中だけで分析 (data/private/ に置く)。
+  (B) スマホの記録ページ https://claude.ai/artifact/3Aq5FpumVXvj5DM8TrG5ex (artifact の db の `trades`、所有者だけが読み書き)。分析は Claude が `ArtifactData list trades` で読む
+- 公開してよいのは集計の結論だけ (例: 「通知とのずれは平均+0.3pips」)。個々の取引や金額は書かない
+- SBI のパスワードやログイン情報は受け取らない。SBI のページは Claude からは開けない (ログインが必要)
 
 ## 5. 未解決の課題・やること
 
