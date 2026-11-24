@@ -40,6 +40,19 @@ def check(h: pd.DataFrame, ops: list[dict] | None = None, now=None) -> dict:
     notes = " ".join(o.get("reason", "") for o in (ops or []))
     if "介入" in notes:
         items.append((1, "介入警戒", "ニュースに「介入」の言葉 (急な円高に注意)"))
+    # 円安けん制の段階 (ルールの読み取りと Gemini の高い方)。前回の記録より強まっていたら知らせる
+    stage = max([int(o.get("stage", 0)) for o in (ops or []) if "stage" in o] or [0])
+    prev = 0
+    try:
+        log = pd.read_csv(os.path.join(ROOT, "journal", "org.csv"))
+        if "介入けん制の段階" in log:
+            prev = int(log["介入けん制の段階"].dropna().iloc[-24:].max())
+    except Exception:
+        pass
+    if stage >= 3:
+        items.append((2 if stage >= 4 else 1, "介入警戒", f"円安けん制が段階{stage} (強い言葉)。急な円高に注意" + (" — 強まっている" if stage > prev else "")))
+    elif stage > prev and stage >= 2:
+        items.append((1, "介入警戒", f"円安けん制が段階{prev}→{stage}に強まった"))
     hi20 = h.High.iloc[-480:].max()
     if c.iat[-1] >= 155 and c.iat[-1] >= hi20 - 0.3:
         items.append((1, "介入警戒", f"20日の高値圏 ({hi20:.2f}) で円安が進んでいる"))

@@ -13,9 +13,36 @@ import pandas as pd
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 
 
-def audit(h: pd.DataFrame, now=None) -> list[str]:
-    now = now or pd.Timestamp.now(tz="UTC")
+def meeting_check(res: dict) -> list[str]:
+    """会議の中身の監査: 結論が根拠と食い違っていないか、古い情報・対立・偏りを見落としていないか"""
     out = []
+    if not res:
+        return out
+    ops = res.get("ops", [])
+    if res.get("market", {}).get("conflict"):
+        out.append("作戦の合図と方向の会議が対立したまま結論を出している。対立時の成績はまだ検証中")
+    voters = [o for g in res.get("depts", {}).values() for o in g.get("voters", [])]
+    if voters:
+        top = max(voters, key=lambda o: abs(o["bias"]))
+        share = abs(top["bias"]) / max(sum(abs(o["bias"]) for o in voters), 1e-9)
+        if share > 0.6 and abs(res.get("overall", 0)) >= 0.25:
+            out.append(f"結論が「{top['name'].split('|')[-1]}」1人の意見でほぼ決まっている ({share:.0%})")
+    summ = [o for o in ops if o["name"].startswith("AI情報|") and o["name"] not in ("AI情報|まとめ", "AI情報|介入けん制の段階")]
+    if summ and abs(res.get("overall", 0)) >= 0.25:
+        ai = sum(o["bias"] for o in summ)
+        if ai * res["overall"] < 0 and abs(ai) >= 1:
+            out.append("ニュースを読んだAIの見立てと、会議の結論が逆向き (どちらかが古いか、材料を読み違えている可能性)")
+    if res.get("stale"):
+        out.append("古い情報を外して判断した: " + " / ".join(res["stale"][:3]))
+    if res.get("secs", 0) > 120:
+        out.append(f"会議に{res['secs']:.0f}秒かかっている (情報処理の遅れ)")
+    return out
+
+
+def audit(h: pd.DataFrame, now=None, res: dict | None = None) -> list[str]:
+    """res に会議の結果 (meeting.final) を渡すと、会議の中身も監査する"""
+    now = now or pd.Timestamp.now(tz="UTC")
+    out = meeting_check(res)
     # データの鮮度 (平日)
     age = (now - h.index[-1]).total_seconds() / 3600
     if now.weekday() < 5 and age > 3:
@@ -77,6 +104,25 @@ def audit(h: pd.DataFrame, now=None) -> list[str]:
         n = (dec.date >= (now.tz_localize(None) - pd.Timedelta(days=28))).sum()
         if n >= 6:
             out.append(f"直近4週間で担当の重みを{n}回変えている。変えすぎると過去に合わせ込むだけになる")
+    except Exception:
+        pass
+    # 自己正当化の防止: 採用した新ルールに「使っていない期間での検証」の記録があるか
+    try:
+        pr = pd.read_csv(os.path.join(ROOT, "journal", "proposals.csv"))
+        bad = pr[(pr.status == "採用") & (pr.holdout.isna() | (pr.holdout.astype(str).str.strip() == ""))]
+        if len(bad):
+            out.append(f"使っていない期間で確かめずに採用したルールがある: {', '.join(bad.title.astype(str).head(3))}")
+        slow = pr[pr.status.isin(["提案", "検証中"])]
+        if len(slow) >= 5:
+            out.append(f"検証待ちの提案が{len(slow)}件たまっている")
+    except Exception:
+        pass
+    # 通知の遅れ
+    try:
+        lt = pd.read_csv(os.path.join(ROOT, "journal", "latency.csv"))
+        lt = lt.tail(50)
+        if len(lt) >= 5 and lt.delay_min.median() > 15:
+            out.append(f"合図が出てから通知までの遅れが中央値{lt.delay_min.median():.0f}分 (足が確定してから)")
     except Exception:
         pass
     return out or ["大きな問題は見つからない (ただし記録が少ないうちは判断できないことも多い)"]

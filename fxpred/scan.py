@@ -335,16 +335,34 @@ def run(dry=False):
             reasons.append("過去の検証で成績の良かった値動きのパターンが発生")
         lv = views[lead]["lines"][0] if lead == "レンジ担当" else None
         if lv: reasons.append(lv.split(" / レンジ内")[0])
+        strength_against = False
+        if key == "S":   # 急変に付いていく合図: ドルか円の強さが逆向きなら注意 (23年で成績が悪い。影の運用で記録してから止めるか判断)
+            try:
+                from .org import strength as _stg
+                strength_against = _stg.against(s["side"], _stg.now(h.Close))
+            except Exception:
+                pass
         from . import positions as _pp
         if key in _pp.TRAIL:
             reasons.append("出口: 利確の値は目安。伸ばす取引なので、1R進んだら損切りを引き上げ続ける (その都度通知)")
         cautions = [x for x in ng if not x.startswith("作戦シグナル")] + stop_why
+        if strength_against:
+            cautions = ["ドルか円の強さが逆向き (過去はこの形の成績が悪い)"] + cautions
         exit_h = {"eod": "本日 朝5時まで", "24h": "24時間", None: "48時間"}
         valid = EXIT_VALID.get(key, "48時間")
         from . import positions as _pos
         rel = _pos.conflict(s["side"])
+        # 通知管理: 3時間以内に同じ向きの合図を送っていれば、まとめて1回にする (別の作戦でも)
+        try:
+            _sg = pd.read_csv(SIGNALS)
+            _sg = _sg[(_sg.sent.astype(str) == "True") & (_sg.side == s["side"]) &
+                      (pd.to_datetime(_sg.time_utc, utc=True) >= t - pd.Timedelta(hours=3))]
+            if len(_sg) and not rel:
+                rel = "same"
+        except Exception:
+            pass
         if rel == "same":
-            print(f"(同じ向きを保有中のため重複して出さない) {LABEL[key]}")
+            print(f"(同じ向きを保有中か、3時間以内に送ったため重複して出さない) {LABEL[key]}")
             st.setdefault("sent", []).append(sig_id)
             continue
         if rel == "opposite":
@@ -367,7 +385,7 @@ def run(dry=False):
                                          f"{t.tz_convert(JST):%m/%d %H:%M} から{valid}", serious)
             else:
                 print(f"(損小利大の形だが直近の成績がマイナスのため送らない: {g_txt})")
-        tags = "|".join(x.split(" ")[0] for x in ok) + ("|損小利大" if big_rr else "")
+        tags = "|".join(x.split(" ")[0] for x in ok) + ("|損小利大" if big_rr else "") + ("|強さ逆" if strength_against else "")
         log_signal(t, key, s, score, verdict, sent=not skip, conditions=tags)
         if skip:
             print(f"(チャンスと判断しないため送らない: 信頼度{score}{'、担当AIと逆向き' if agree < 0 else ''}) {LABEL[key]}")
@@ -393,6 +411,12 @@ def run(dry=False):
             print(f"(影の運用) {x['strategy']} {'買い' if x['side'] == 1 else '売り'} {x['entry']}")
     except Exception as e:
         print("影の運用のエラー:", e)
+    try:   # 指標のサプライズ度 (発表直後の反応) を記録
+        from .org import surprise
+        for x in surprise.record():
+            print(f"(指標の反応) {x['title']} 15分 {x['move15_pips']:+.1f}pips (普段の{x['surprise_x']}倍)")
+    except Exception as e:
+        print("指標の反応の記録のエラー:", e)
     try:   # AI の組織 (影の運用: 記録だけ。通知は変えない)
         from .org import meeting
         res = meeting.log(h)
@@ -404,6 +428,14 @@ def run(dry=False):
     st["price"] = round(float(h.Close.iat[n]), 3)
     for kind, title, body in msgs:
         print(f"[{kind}] {title}\n{body}\n")
+        if not dry and kind == "ready":   # 通知管理: 足が確定してから送るまでの遅れを記録 (監査AIが見る)
+            try:
+                lp = os.path.join(os.path.dirname(SIGNALS), "latency.csv")
+                delay = (pd.Timestamp.now(tz="UTC") - (t + pd.Timedelta(hours=1))).total_seconds() / 60
+                pd.DataFrame([{"time_utc": f"{pd.Timestamp.now(tz='UTC'):%Y-%m-%d %H:%M}", "title": title[:40],
+                               "delay_min": round(delay, 1)}]).to_csv(lp, mode="a", header=not os.path.exists(lp), index=False)
+            except Exception:
+                pass
         if not dry:
             color = {"ready": 5763719, "wait": 16776960, "info": 9807270}[kind]
             notify.send(title, body, color=color)

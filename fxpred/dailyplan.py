@@ -243,7 +243,7 @@ def morning_message(h: pd.DataFrame, a: dict, fc: dict, reviews: list[dict], lea
         summ = [o["reason"] for o in res["ops"] if o["name"] == "AI情報|まとめ"]
         if summ:
             lines.append(f"・情報解析部隊 (AI): {summ[0]}")
-        lines.append(f"・監査AI: {auditor.audit(h)[0]}")
+        lines.append(f"・監査AI: {auditor.audit(h, res=res)[0]}")
     except Exception as e:
         print("AIの組織のエラー:", e)
     try:

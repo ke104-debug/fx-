@@ -35,6 +35,15 @@ def features(x: pd.DataFrame, uj: pd.Series, h: pd.DataFrame | None = None) -> p
         b["金融政策|政策金利の方向(60日)"] = np.sign(_chg(x, "FF金利", 60, False).round(2)).fillna(0)
     if "米10年" in x and "日10年" in x:
         b["金融政策|日米金利差の変化(20日)"] = _clip(_z((x["米10年"] - x["日10年"]).diff(20)))
+    # ---- 織り込みの担当: 2年金利は「この先2年の政策金利の予想」をほぼ表す。政策金利との差 = どれだけ利上げ/利下げを織り込んでいるか
+    if "米2年" in x and "FF金利" in x:
+        b["織り込み|米の利上げ織り込みの変化(20日)"] = _clip(_z((x["米2年"] - x["FF金利"]).diff(20)))
+        b["織り込み|米の利上げ織り込みの変化(5日)"] = _clip(_z((x["米2年"] - x["FF金利"]).diff(5)))
+    if "日2年" in x:
+        b["織り込み|日本の利上げ織り込みの変化(20日)・逆"] = -_clip(_z(x["日2年"].diff(20)))
+        if "米2年" in x:
+            b["織り込み|日米2年金利差の変化(20日)"] = _clip(_z((x["米2年"] - x["日2年"]).diff(20)))
+            b["織り込み|日米2年金利差の変化(5日)"] = _clip(_z((x["米2年"] - x["日2年"]).diff(5)))
     # ---- 他市場AI
     b["他市場|米株の勢い(5日)"] = _clip(_z(_chg(x, "米株", 5)))
     b["他市場|日経の勢い(5日)"] = _clip(_z(_chg(x, "日経", 5)))
@@ -126,3 +135,31 @@ def events_now(now_utc: pd.Timestamp) -> dict:
     names = [cal.fmt(e) for e in soon]
     return {"bias": 0.0, "reason": ("24時間以内の重要指標: " + " / ".join(names[:3])) if names else "24時間以内に重要指標なし",
             "n": len(soon), "caution": bool(soon)}
+
+
+# 円安けん制の段階 (財務大臣・財務官の発言の強さ)。強い言葉ほど段階が上
+INTERVENTION_LADDER = [(4, ("介入を実施", "介入した", "介入を確認", "レートチェック")),
+                       (3, ("断固たる措置", "あらゆる手段", "あらゆる措置", "排除しない", "適切な行動", "断固たる対応")),
+                       (2, ("憂慮", "行き過ぎ", "過度な変動", "投機的な動き", "緊張感")),
+                       (1, ("注視", "高い緊張感をもって", "動向を見守る"))]
+JP_POLITICS = ["選挙", "首相", "総理", "内閣", "辞任", "財政", "補正予算", "国債増発", "減税", "給付", "財務相", "財務大臣", "財務官"]
+
+
+def intervention_now(items: list[dict]) -> dict:
+    """介入警戒の担当 (日本の政治・財政): 財務大臣・財務官のけん制の言葉から段階 (0〜4) を判定"""
+    best, why = 0, ""
+    for x in items[:80]:
+        t = x["title"]
+        if not any(k in t for k in ("財務相", "財務大臣", "財務官", "為替", "円安", "介入")):
+            continue
+        for lv, words in INTERVENTION_LADDER:
+            if any(w in t for w in words) and lv > best:
+                best, why = lv, t
+    return {"stage": best, "reason": why or "円安けん制の発言なし"}
+
+
+def jp_politics_now(items: list[dict]) -> dict:
+    """日本の政治・財政の担当: 選挙・首相交代・財政拡大の見出しの数 (財政拡大は円安材料として +)"""
+    hits = [x["title"] for x in items[:80] if any(k in x["title"] for k in JP_POLITICS)]
+    loose = sum(any(k in t for k in ("財政拡大", "補正予算", "国債増発", "減税", "給付")) for t in hits)
+    return {"bias": float(min(loose / 4, 1.0)), "reason": hits[0] if hits else "目立つ政治・財政の見出しなし", "n": len(hits)}

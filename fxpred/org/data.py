@@ -34,6 +34,35 @@ def _fred(sid: str) -> pd.Series:
     return pd.to_numeric(s, errors="coerce").dropna()
 
 
+def _wareki(x: str):
+    """財務省の CSV の和暦 (S49.9.24 / H1.1.10 / R8.10.30) → 日付"""
+    try:
+        era, rest = x[0], x[1:]
+        y, m, d = (int(v) for v in rest.split("."))
+        return pd.Timestamp({"S": 1925, "H": 1988, "R": 2018}[era] + y, m, d)
+    except Exception:
+        return pd.NaT
+
+
+def jgb() -> pd.DataFrame:
+    """財務省の国債金利 (無料・日次)。過去分 (jgbcm_all.csv) と今月分 (jgbcm.csv)。公表は翌営業日なので1日遅らせる"""
+    parts = []
+    for f in ("data/jgbcm_all.csv", "jgbcm.csv"):
+        try:
+            raw = urllib.request.urlopen(f"https://www.mof.go.jp/jgbs/reference/interest_rate/{f}", timeout=60).read()
+            d = pd.read_csv(io.BytesIO(raw), encoding="shift_jis", skiprows=1)
+            d.index = d.iloc[:, 0].astype(str).map(_wareki)
+            parts.append(d[["2年", "10年"]].apply(pd.to_numeric, errors="coerce"))
+        except Exception:
+            pass
+    if not parts:
+        return pd.DataFrame()
+    j = pd.concat(parts)
+    j = j[~j.index.isna()]
+    j = j[~j.index.duplicated(keep="last")].sort_index()
+    return j.rename(columns={"2年": "日2年", "10年": "日10年(財務省)"}).shift(1)
+
+
 def fetch(start="2003-06-01", max_age_h=6) -> pd.DataFrame:
     """米国・日本の日付ごとの終値 (そろえる前)。state にキャッシュ"""
     import time
@@ -50,6 +79,10 @@ def fetch(start="2003-06-01", max_age_h=6) -> pd.DataFrame:
         except Exception:
             pass
     f = pd.DataFrame(cols)
+    try:
+        f = pd.concat([f, jgb()], axis=1, sort=True)
+    except Exception:
+        pass
     d = pd.concat([y, f], axis=1, sort=True)
     os.makedirs(os.path.dirname(CACHE) or ".", exist_ok=True)
     d.to_pickle(CACHE)

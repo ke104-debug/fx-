@@ -18,8 +18,9 @@ from .. import specialists as sp
 
 STATE = os.getenv("FX_GEMINI_STATE", "state/gemini.json")
 MAX_PER_DAY = 30
-ROLES = ["経済指標", "金融政策", "ニュース", "地政学", "他市場", "センチメント"]
-QUERIES = ["ドル円", "日銀 金融政策", "FRB 利下げ OR 利上げ", "米国 経済指標", "地政学 リスク", "米国債 利回り"]
+ROLES = ["経済指標", "金融政策", "ニュース", "地政学", "他市場", "センチメント", "日本の政治・財政", "ドルか円か"]
+QUERIES = ["ドル円", "日銀 金融政策", "FRB 利下げ OR 利上げ", "米国 経済指標", "地政学 リスク", "米国債 利回り",
+           "為替介入 財務官 OR 財務相", "首相 財政 OR 選挙 OR 補正予算"]
 API = "https://generativelanguage.googleapis.com/v1beta"
 
 
@@ -79,8 +80,14 @@ def ask(price: float, now=None) -> dict | None:
         + "、".join(ROLES) + "。\n"
         "bias は -1 (ドル円が下がりやすい=円高) 〜 +1 (上がりやすい=円安ドル高)、材料がなければ0。"
         "importance は 0〜1 (相場を大きく動かしうる度合い)。reason は日本語で40字以内、根拠にした見出しの内容を含める。"
+        "「ドルか円か」は、最近の動きがドル側の理由 (米国の材料) か円側の理由 (日本の材料) かを reason に書き、bias はその材料の向き。"
+        "「日本の政治・財政」は選挙・首相交代・財政拡大・財務大臣や財務官の発言を見る。"
+        "加えて intervention_stage に、財務大臣・財務官の円安けん制の強さを 0〜4 の整数で入れる "
+        "(0=発言なし, 1=注視している, 2=憂慮・行き過ぎ, 3=断固たる措置・あらゆる手段を排除しない, 4=介入の実施や確認)。"
+        "news_time に、判断の根拠にした最も新しい見出しの時刻 (日本時間 MM/DD HH:MM) を入れる。"
         "見出しに無いことは推測しない。JSON だけを返す: "
-        '{"roles": [{"role": "経済指標", "bias": 0.0, "importance": 0.0, "reason": ""}, ...], "summary": "全体のまとめ60字以内"}')
+        '{"roles": [{"role": "経済指標", "bias": 0.0, "importance": 0.0, "reason": ""}, ...], "summary": "全体のまとめ60字以内", '
+        '"intervention_stage": 0, "news_time": "MM/DD HH:MM"}')
     body = {"contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"}}
     res, model, errs = None, None, []
@@ -106,6 +113,7 @@ def ask(price: float, now=None) -> dict | None:
         return None
     res["model"] = model
     res["n_headlines"] = len(items)
+    res["asked_at"] = f"{now:%Y-%m-%d %H:%M}"
     st = {"day": day, "count": (st.get("count", 0) if st.get("day") == day else 0) + 1, "last": f"{now:%Y-%m-%d %H:%M}",
           "last_ts": time.time(), "model": model, "result": res}
     os.makedirs(os.path.dirname(STATE) or ".", exist_ok=True)
@@ -126,4 +134,11 @@ def opinions(price: float) -> list[dict]:
             out.append(dict(name=f"AI情報|{r['role']}", bias=b, reason=str(r.get("reason", ""))[:80]))
     if res.get("summary"):
         out.append(dict(name="AI情報|まとめ", bias=0.0, reason=str(res["summary"])[:100]))
+    stg = res.get("intervention_stage")
+    if isinstance(stg, (int, float)):
+        out.append(dict(name="AI情報|介入けん制の段階", bias=0.0, stage=int(stg),
+                        reason=["発言なし", "注視", "憂慮・行き過ぎ", "断固たる措置・あらゆる手段", "介入の実施・確認"][max(0, min(4, int(stg)))]))
+    # 情報の鮮度: いつの情報にもとづく結論か (古い結果を使い回していないか)
+    for o in out:
+        o["as_of"] = res.get("asked_at", "")
     return out

@@ -204,3 +204,42 @@ def shock_follow(d, z_th=3.5, yen=2.0, stop_atr=1.5, tgt_atr=3.0, hold=24, align
         out.append((d.index[i], side, pips, abs(d.Open.iat[i + 1] - stop) * 100))
         last_day = day
     return pd.DataFrame(out, columns=["time", "side", "pips", "risk"])
+
+
+def tokyo_morning_break(d, hold=16, max_entry_h=6, stop_frac=1.0):
+    """時間帯の癖を狙う: 東京の朝 (日本時間8〜10時) の値幅を、大きな流れ (20日平均の向き) の方向に抜けたら入る。
+    損切りは値幅の反対側 (stop_frac=1)、hold 本で決済。10時から max_entry_h 時間以内の最初の抜けだけ。1日1回"""
+    jst = d.index + pd.Timedelta(hours=9)          # 足の始まりの日本時間
+    hr, day = jst.hour, jst.normalize()
+    up = d.trend_up.values if "trend_up" in d else (d.Close.ewm(span=480).mean().diff(24) > 0).values
+    O, H, L, C = d.Open.values, d.High.values, d.Low.values, d.Close.values
+    out = []
+    df = pd.DataFrame({"day": day, "hr": hr, "i": np.arange(len(d))})
+    for dy, g in df.groupby("day"):
+        rng = g[(g.hr >= 8) & (g.hr < 10)]
+        if len(rng) < 2 or dy.weekday() >= 5:
+            continue
+        hi, lo = H[rng.i].max(), L[rng.i].min()
+        cand = g[(g.hr >= 10) & (g.hr < 10 + max_entry_h)]
+        for i in cand.i:
+            side = 1 if C[i] > hi else -1 if C[i] < lo else 0
+            if side == 0:
+                continue
+            if (side == 1) != bool(up[i]) or i + 1 >= len(d):
+                break
+            e = O[i + 1]
+            stop = (lo if side == 1 else hi) if stop_frac == 1 else e - side * stop_frac * (hi - lo)
+            risk = abs(e - stop)
+            if risk <= 0:
+                break
+            px, k = None, i + 1
+            for k in range(i + 1, min(i + 1 + hold, len(d))):
+                if (side == 1 and L[k] <= stop) or (side == -1 and H[k] >= stop):
+                    px = O[k] if side * (O[k] - stop) < 0 else stop
+                    break
+            if px is None:
+                px = C[k]
+            out.append(dict(time=d.index[i], exit_time=d.index[k], side=side, risk=risk * 100,
+                            R=(side * (px - e) * 100 - 0.8) / (risk * 100)))
+            break
+    return pd.DataFrame(out)

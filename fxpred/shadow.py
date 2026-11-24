@@ -15,6 +15,8 @@ CANDIDATES = {
     # 23年の研究 (reports/overnight.md) で7年代すべてプラスだった中心の作戦
     "急変に付いていく (3.5倍・流れ方向・月金除外)": dict(fn=lab.shock_follow, params=dict(z_th=3.5)),
     "急変に付いていく 損小利大 (4倍・損切1ATR/利確4ATR・流れ方向)": dict(fn=lab.shock_follow, params=dict(z_th=4, skip_mf=False, stop_atr=1.0, tgt_atr=4.0)),
+    # 時間帯の癖を狙う担当: 東京の朝 (8〜10時) の値幅を流れの方向に抜けたら。23年で年103回・作る +0.10R / 確かめ +0.06R・78%の年でプラス
+    "東京朝の値幅ブレイク (流れの方向・16時間)": dict(fn=lab.tokyo_morning_break, params=dict(hold=16)),
 }
 
 

@@ -56,4 +56,8 @@ def run(apply=True) -> list[str]:
     if rows and apply:
         json.dump(allw, open(W_PATH, "w"), ensure_ascii=False, indent=1)
         pd.DataFrame(rows).to_csv(DEC, mode="a", header=not os.path.exists(DEC), index=False)
+        from . import proposals
+        for r in rows:   # 手続きの記録: 重みの変更も「提案 → 使っていない期間 (重みを決めた後の実際の記録) で確認 → 採用」
+            proposals.add("シミュレーション・検証部隊 (進言の再検証)", f"重み変更: {r['name']} {r['before']}→{r['after']}",
+                          built_on="23年の採点 (〜2026-11)", holdout=r["reason"], compared="重みを変える前", status="採用")
     return msgs or ["再検証: 重みを変える担当はなし"]

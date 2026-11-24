@@ -120,11 +120,21 @@ def review(h: pd.DataFrame, days: int, monthly: bool) -> tuple[str, str]:
         from .org import advisor, auditor, review as org_review
         lines += ["", "**改善研究部隊・進言AI**"] + [f"・{x}" for x in advisor.advise()]
         lines += ["", "**シミュレーション・検証部隊 (進言の再検証)**"] + [f"・{x}" for x in org_review.run()]
-        lines += ["", "**監査AI (問題点)**"] + [f"・{x}" for x in auditor.audit(h)]
+        from .org import postmortem
+        lines += ["", "**原因究明部隊**"] + [f"・{x}" for x in postmortem.run(h)]
+        lines += ["", "**監査AI (問題点)**"] + [f"・{x}" for x in auditor.audit(h, res=_meeting_safe(h))]
     except Exception as e:
         print("進言AIのエラー:", e)
     title = f"📊 {'月次' if monthly else '週次'}の見直し USD/JPY ({(since + timedelta(days=1)).tz_convert(dp.JST):%m/%d}〜{h.index[-1].tz_convert(dp.JST):%m/%d})"
     return title, "\n".join(lines)
+
+
+def _meeting_safe(h):
+    try:
+        from .org import meeting
+        return meeting.final(h)
+    except Exception:
+        return None
 
 
 def run(monthly=False, dry=False):

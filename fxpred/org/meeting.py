@@ -21,7 +21,7 @@ LOG = os.path.join(ROOT, "journal", "org.csv")
 DEPTS = {"相場分析": "相場分析部隊", "強さ": "相場分析部隊", "テクニカル": "相場分析部隊", "ローソク足": "相場分析部隊",
          "チャートパターン": "相場分析部隊", "サポレジ": "相場分析部隊", "マルチタイム": "相場分析部隊", "ボラティリティ": "相場分析部隊",
          "市場構造": "相場分析部隊", "AI情報": "情報解析部隊", "金融政策": "情報解析部隊", "他市場": "情報解析部隊", "センチメント": "情報解析部隊",
-         "経済指標": "情報解析部隊", "ニュース": "情報解析部隊", "地政学": "情報解析部隊", "需給": "情報解析部隊"}
+         "経済指標": "情報解析部隊", "ニュース": "情報解析部隊", "地政学": "情報解析部隊", "需給": "情報解析部隊", "政治財政": "情報解析部隊", "織り込み": "情報解析部隊"}
 
 
 def weights() -> dict:
@@ -50,6 +50,14 @@ def opinions(h: pd.DataFrame, now=None) -> list[dict]:
     e50, e200 = c.ewm(span=50).mean().iat[-1], c.ewm(span=200).mean().iat[-1]
     ops.append(dict(name="相場分析|トレンド(50/200本)", bias=float(np.sign(e50 - e200)), reason="50本平均が200本平均の" + ("上" if e50 > e200 else "下")))
     ops.append(dict(name="相場分析|前日からの勢い", bias=float(np.sign(c.iat[-1] - c.iat[-25])), reason=f"24時間で {(c.iat[-1] - c.iat[-25]) * 100:+.0f}pips"))
+    # ドル主導か円主導か (EUR/USD・EUR/JPY)
+    try:
+        from . import strength
+        stn = strength.now(h.Close)
+        if stn:
+            ops.append(dict(name="強さ|ドル主導の上げは続く(1時間)", bias=stn["bias"], reason=stn["text"]))
+    except Exception as e:
+        print("ドルと円の強さのエラー:", e)
     # ⑩〜⑮ 相場分析部の専門AI (1時間足の最新の確定足)
     try:
         from . import chart
@@ -60,8 +68,14 @@ def opinions(h: pd.DataFrame, now=None) -> list[dict]:
         print("相場分析部のエラー:", e)
     # 履歴で検証できない専門AI (記録を始めた日から採点)
     news = sp.headlines(hours=24)
+    try:
+        news = news + sp.headlines(query="為替介入 OR 財務官 OR 財務相", hours=48) + sp.headlines(query="首相 財政 OR 選挙", hours=48)
+    except Exception:
+        pass
+    iv = an.intervention_now(news)
+    ops.append(dict(name="政治財政|介入けん制の段階", bias=0.0, stage=iv["stage"], reason=f"段階{iv['stage']}: {iv['reason']}"))
     for name, fn in (("ニュース|見出しの向き", an.news_now), ("地政学|紛争・制裁のニュース", an.geo_now),
-                     ("金融政策|日銀・FRBの見出し", an.policy_news_now)):
+                     ("金融政策|日銀・FRBの見出し", an.policy_news_now), ("政治財政|財政・選挙の見出し", an.jp_politics_now)):
         try:
             o = fn(news)
             ops.append(dict(name=name, bias=o["bias"], reason=o["reason"]))
@@ -170,40 +184,86 @@ def plans(hours=3) -> list[dict]:
     return s.to_dict("records")
 
 
-def final(h: pd.DataFrame, ops: list[dict] | None = None) -> dict:
-    """全統括AI: 方向の会議 + 作戦部隊の合図 + リスク管理部隊の判定 → 最終結論"""
-    from . import risk
-    ops = ops if ops is not None else opinions(h)
-    res = decide(ops)
-    rk = risk.check(h, ops)
-    pl = plans()
+STALE_H = {"AI情報": 3, "ニュース": 26, "地政学": 26, "政治財政": 48}   # これより古い意見は使わない (時間)
+
+
+def fresh(ops: list[dict], now=None) -> tuple[list[dict], list[str]]:
+    """情報の鮮度: 古い意見を外す (as_of がある意見だけ判定)"""
+    now = now or pd.Timestamp.now(tz="UTC")
+    keep, dropped = [], []
+    for o in ops:
+        lim = STALE_H.get(o["name"].split("|")[0])
+        if lim and o.get("as_of"):
+            age = (now - pd.Timestamp(o["as_of"], tz="UTC")).total_seconds() / 3600
+            if age > lim:
+                dropped.append(f"{o['name'].split('|')[-1]} ({age:.0f}時間前の情報)")
+                continue
+        keep.append(o)
+    return keep, dropped
+
+
+def market_head(res: dict, pl: list[dict]) -> dict:
+    """中間統括① 市場判断統括: 方向の会議 (情報解析・相場分析) + 作戦部隊の合図。
+    意見が対立した時の決まり: 作戦部隊の合図 (23年で検証済みの作戦) を優先し、方向の会議が強く逆 (0.25以上) なら「対立」と記録する。
+    対立した合図の成績は影の運用で採点し、悪ければ「対立なら見送り」に変える (検証してから)"""
     sent = [p for p in pl if str(p.get("sent")) == "True"]
-    if rk["level"] == "警戒":
-        concl = "新しく入らない (リスク管理部隊が警戒)"
-    elif sent:
+    if sent:
         p = sent[-1]
-        side = "買い" if int(p["side"]) == 1 else "売り"
-        agree = (res["overall"] > 0.1 and int(p["side"]) == 1) or (res["overall"] < -0.1 and int(p["side"]) == -1)
-        against = (res["overall"] < -0.1 and int(p["side"]) == 1) or (res["overall"] > 0.1 and int(p["side"]) == -1)
-        concl = f"{side}の合図あり ({p['entry']}・損切り{p['stop']})" + ("。方向の会議も同じ向き" if agree else "。方向の会議は逆向き、慎重に" if against else "")
+        side = int(p["side"])
+        conflict = res["overall"] * side <= -0.25
+        agree = res["overall"] * side >= 0.1
+        return {"side": side, "signal": p, "conflict": conflict, "agree": agree,
+                "text": f"{'買い' if side == 1 else '売り'}の合図 ({p['entry']}・損切り{p['stop']})"
+                        + ("。方向の会議も同じ向き" if agree else "。方向の会議と対立" if conflict else "")}
+    return {"side": 0, "signal": None, "conflict": False, "agree": False,
+            "text": {"買い寄り": "買い寄りだが作戦の合図はまだない", "売り寄り": "売り寄りだが作戦の合図はまだない",
+                     "中立": "方向の材料が弱い"}[res["verdict"]]}
+
+
+def risk_head(h: pd.DataFrame, ops: list[dict]) -> dict:
+    """中間統括② リスク統括: リスク管理 + 資金管理 + データ監視 + 保有中 (決済・ポジション管理)"""
+    from . import risk
+    from .. import positions
+    rk = risk.check(h, ops)
+    held = positions.load()
+    return {**rk, "held": held, "text": rk["level"] + (f" / 保有中 {len(held)}件" if held else "")}
+
+
+def final(h: pd.DataFrame, ops: list[dict] | None = None) -> dict:
+    """全統括AI (運用統括): 市場判断統括とリスク統括の結論だけを受け取って最終結論を出す。
+    決まり: リスクが「警戒」なら新しく入らない > 作戦の合図があれば入る (対立・注意なら慎重) > 合図がなければ様子見"""
+    import time as _t
+    t0 = _t.time()
+    ops = ops if ops is not None else opinions(h)
+    ops, dropped = fresh(ops)
+    res = decide(ops)
+    pl = plans()
+    mk, rh = market_head(res, pl), risk_head(h, ops)
+    if rh["level"] == "警戒":
+        concl = "新しく入らない (リスク統括が警戒)"
+    elif mk["signal"] is not None:
+        concl = mk["text"] + ("。リスクは注意" if rh["level"] == "注意" else "") + ("。慎重に" if mk["conflict"] or rh["level"] == "注意" else "")
     else:
-        concl = {"買い寄り": "買い寄りだが作戦の合図はまだない (下値の押し目を待つ)", "売り寄り": "売り寄りだが作戦の合図はまだない (戻りを待つ)",
-                 "中立": "様子見 (方向の材料が弱い)"}[res["verdict"]]
-    res.update(risk=rk, plans=pl, conclusion=concl, ops=ops)
+        concl = "様子見 (" + mk["text"] + ")"
+    res.update(risk=rh, plans=pl, conclusion=concl, ops=ops, market=mk, stale=dropped, secs=round(_t.time() - t0, 1))
     return res
 
 
 def text(res: dict) -> str:
     L = [f"【全統括AI】{res.get('conclusion', res['verdict'])}",
          f"【方向の会議】{res['verdict']} (強さ {res['overall']:+.2f})" + ("　※24時間以内に重要指標" if res["caution"] else "")]
+    if "market" in res:
+        L.append(f"【市場判断統括】{res['market']['text']}")
     if "risk" in res:
-        L.append(f"【リスク管理部隊】{res['risk']['level']}" + "".join(f"\n  ・{who}: {why}" for who, why in res["risk"]["items"]))
+        L.append(f"【リスク統括】{res['risk']['text']}" + "".join(f"\n  ・{who}: {why}" for who, why in res["risk"]["items"]))
+    if res.get("stale"):
+        L.append("【鮮度】古いので使わなかった意見: " + " / ".join(res["stale"]))
     for d, g in res["depts"].items():
         sc = "判断に使う意見なし" if g["score"] is None else f"{g['score']:+.2f}"
         L.append(f"【{d}】{sc}")
         for o in g["voters"]:
             L.append(f"  ・{o['name'].split('|')[1]} {o['bias']:+.2f} … {o['reason']}")
-        pri = lambda o: (0 if o["name"].startswith("AI情報") else 1 if o["name"].split("|")[0] in ("ニュース", "地政学", "経済指標", "需給") else 2)
+        pri = lambda o: (0 if o["name"].startswith("AI情報") else 1 if o["name"].split("|")[0] in ("ニュース", "地政学", "経済指標", "需給", "政治財政") else 2)
         for o in sorted([o for o in g["notes"] if o.get("reason") and o["reason"] != "合図あり"], key=pri)[:6]:
             L.append(f"  (参考) {o['name'].split('|')[1]} … {o['reason']}")
     return "\n".join(L)
@@ -215,7 +275,9 @@ def log(h: pd.DataFrame) -> dict:
     ops = res["ops"]
     row = {"time_utc": f"{h.index[-1] + pd.Timedelta(hours=1):%Y-%m-%d %H:%M}", "price": round(float(h.Close.iat[-1]), 3),
            "overall": res["overall"], "verdict": res["verdict"], "caution": res["caution"],
-           "risk": res["risk"]["level"], "conclusion": res["conclusion"],
+           "risk": res["risk"]["level"], "conclusion": res["conclusion"], "conflict": res["market"]["conflict"], "secs": res["secs"],
+           "監査": "; ".join(__import__("fxpred.org.auditor", fromlist=["x"]).meeting_check(res))[:200],
+           "介入けん制の段階": max([int(o.get("stage", 0)) for o in ops if "stage" in o] or [0]),
            **{o["name"]: round(o["bias"], 3) for o in ops}}
     os.makedirs(os.path.dirname(LOG), exist_ok=True)
     if os.path.exists(LOG):
