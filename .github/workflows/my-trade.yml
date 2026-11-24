@@ -1,0 +1,64 @@
+name: 自分の取引を登録
+# 利用者が自分で入った取引を登録すると、損切り・利確の目安を Discord に送り、その後は5分監視が
+# 損切り・損切りの引き上げ・期限・週末前を知らせる。公開リポジトリなので記録に残るのは向きと価格だけ (数量・金額は入れない)。
+# スマホの GitHub アプリ: Actions → 自分の取引を登録 → Run workflow
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "操作"
+        type: choice
+        options: [登録, 決済, 一覧]
+        default: 登録
+      side:
+        description: "売買 (登録のとき)"
+        type: choice
+        options: [買い, 売り]
+        default: 買い
+      price:
+        description: "約定価格 (登録) / 決済価格 (決済。空なら今の価格)"
+        required: false
+        default: ""
+      stop:
+        description: "損切り (空ならシステムが決める)"
+        required: false
+        default: ""
+permissions:
+  contents: write
+concurrency:
+  group: fx-mytrade
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13", cache: pip }
+      - run: pip install -r requirements.txt
+      - name: 登録して保存 (5分監視と同時に書き込んだ時は、最新を取り直してやり直す)
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          ACT: ${{ inputs.action }}
+          SIDE: ${{ inputs.side }}
+          PRICE: ${{ inputs.price }}
+          STOP: ${{ inputs.stop }}
+        run: |
+          git config user.name "ai-fx-bot"
+          git config user.email "ai-fx-bot@users.noreply.github.com"
+          case "$ACT" in 登録) CMD=register;; 決済) CMD=close;; *) CMD=list;; esac
+          if [ "$CMD" = register ] && [ -z "$PRICE" ]; then echo "約定価格を入れてください"; exit 1; fi
+          # 通知は最後に1回だけ送るため、やり直しの間は送らない
+          for i in 1 2 3 4 5; do
+            git fetch -q origin main && git reset -q --hard origin/main
+            if [ "$CMD" = register ]; then DISCORD_WEBHOOK_URL= python -m fxpred.mytrade register "$SIDE" "$PRICE" "$STOP" > out.txt
+            elif [ "$CMD" = close ]; then DISCORD_WEBHOOK_URL= python -m fxpred.mytrade close "$PRICE" > out.txt
+            else break; fi
+            git add journal
+            git diff --cached --quiet && break
+            git commit -qm "自分の取引: $ACT" && git push -q origin HEAD:main && break
+            echo "書き込みがぶつかったのでやり直し ($i)"; sleep 5
+          done
+          # 保存できたら通知 (一覧はここで送る)
+          python -m fxpred.mytrade notify_last "$CMD" "$SIDE" "$PRICE"
