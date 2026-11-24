@@ -114,9 +114,9 @@ def ask(price: float, now=None) -> dict | None:
             break
         except Exception as e:
             q = gem.learn(e)
-            if q:
+            if q == "day":
                 gem.exhausted(m)
-            errs.append(f"{m.split('/')[-1]}: {'429 ' if q else ''}{str(e)[:60]}")
+            errs.append(f"{m.split('/')[-1]}: {('429(' + q + ') ') if q else ''}{str(e)[:60]}")
     gem.note("ニュース", ok=res is not None, model=model, tokens=tokens,
              quota=res is None and not gem.usable(cands))
     if res is None:

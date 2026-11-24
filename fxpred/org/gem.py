@@ -121,26 +121,32 @@ def note(job: str, ok=True, quota=False, model=None, tokens=0):
     _save(b)
 
 
-def learn(err) -> bool:
-    """429 の返事の中身から上限の数字を読み取って覚える。429 なら True"""
+def learn(err) -> str:
+    """429 の返事の中身から上限の数字を読み取って覚える。
+    戻り値: "day" (今日の枠を使い切った) / "minute" (1分あたりの上限。少し待てば使える) / "429" (種類不明) / "" (429 以外)"""
     try:
         import urllib.error
         if not isinstance(err, urllib.error.HTTPError) or err.code != 429:
-            return False
+            return ""
         body = json.loads(err.read() or b"{}")
         b = _load()
+        kind = "429"
         for d in body.get("error", {}).get("details", []):
             for v in d.get("violations", []):
                 qid, val = str(v.get("quotaId", "")), v.get("quotaValue")
-                if val and "PerDay" in qid:
-                    b["learned_rpd"] = int(val)
-                elif val and "PerMinute" in qid:
-                    b["learned_rpm"] = int(val)
-        b["last_429"] = f"{pd.Timestamp.now(tz='UTC'):%Y-%m-%d %H:%M}"
+                if "PerDay" in qid:
+                    kind = "day"
+                    if val:
+                        b["learned_rpd"] = int(val)
+                elif "PerMinute" in qid:
+                    kind = "minute" if kind != "day" else kind
+                    if val:
+                        b["learned_rpm"] = int(val)
+        b["last_429"] = f"{pd.Timestamp.now(tz='UTC'):%Y-%m-%d %H:%M} {kind}"
         _save(b)
-        return True
+        return kind
     except Exception:
-        return True
+        return "429"
 
 
 def status() -> str:
@@ -182,9 +188,11 @@ def call(job: str, prompt: str, as_json=True, temperature=0.2) -> dict | str | N
             note(job, ok=True, model=m, tokens=out.get("usageMetadata", {}).get("totalTokenCount", 0))
             return json.loads(txt) if as_json else txt.strip()
         except Exception as e:
-            if learn(e):
+            kind = learn(e)
+            if kind:
                 quota_hits += 1
-                exhausted(m)          # このモデルは今日の枠を使い切った → 次のモデルへ
+            if kind == "day":
+                exhausted(m)          # このモデルは今日の枠を使い切った → 次のモデルへ (1分の上限なら次の回に回す)
             errs.append(f"{m.split('/')[-1]}: {str(e)[:80]}")
             continue
     print(f"Gemini ({job}) を呼べませんでした:", " / ".join(errs) or "候補のモデルなし")
