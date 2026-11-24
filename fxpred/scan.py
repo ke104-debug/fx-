@@ -403,6 +403,8 @@ def run(dry=False):
             cautions = ["保有中の取引と逆向き。先に保有中を決済するか検討"] + cautions
         title, body = fmt.signal(s["side"], s["entry"], s["stop"], s.get("target"), score, reasons, cautions,
                                  f"{t.tz_convert(JST):%m/%d %H:%M} から{valid}", serious)
+        if key == "S":   # 遅れを入れた再検証: 急変に付いていく取引は15分を過ぎると期待値がほぼ0になる
+            body = body.replace("通知から60分を過ぎたら見送り", "通知から15分を過ぎたら見送り")
         send_at = learn.get("send_at", edge.SEND_AT)
         skip = score < send_at and key not in URGENT
         # 損小利大の形 (利確が損切りの RR_SEND 倍以上) のレンジ逆張りは、信頼度が低くても送る
