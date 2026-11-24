@@ -17,11 +17,44 @@ from . import regime as rg
 
 CAPITAL = float(os.getenv("FX_CAPITAL", "1000000"))
 STATE = os.getenv("FX_SCAN_STATE", "state/scan.json")
+SIGNALS = os.path.join(os.path.dirname(__file__), "..", "journal", "signals.csv")
 JST = "Asia/Tokyo"
 
 # (作戦, 相場状態) -> 1回のリスク (資金に対する損失上限)。最大下落20%以内を目安に抑えた設定
 RULES = {("S", "荒れ"): 0.04, ("H4", "通常"): 0.015, ("H5", "通常"): 0.01, ("H3", "通常"): 0.01, ("H3", "トレンド"): 0.015}
 LABEL = {"S": "急変の反動 (流れの方向)", "H3": "東京レンジのロンドン抜け", "H4": "レンジ逆張り (流れの方向)", "H5": "指標発表直後の順張り"}
+RR_KEYS, RR_SEND = ("H4",), 3.0   # 損小利大の形なら信頼度が低くても送る作戦と、利確/損切りの倍率
+
+
+def rr_guard(h: pd.DataFrame, last=40, need=10) -> tuple[bool, str]:
+    """「損小利大」で送った合図の直近 last 回を、実際の値動きで答え合わせする (損切りと利確のどちらに先に触れたか、48時間まで)。
+    need 回以上たまって合計がマイナスなら止める"""
+    try:
+        sg = pd.read_csv(SIGNALS)
+    except Exception:
+        return True, ""
+    sg = sg[sg.conditions.astype(str).str.contains("損小利大") & (sg.sent.astype(str) == "True")].tail(last)
+    rs = []
+    for r in sg.itertuples():
+        t0 = pd.Timestamp(r.time_utc, tz="UTC")
+        w = h[h.index > t0].iloc[:48]
+        if not len(w):
+            continue
+        risk = abs(r.entry - r.stop)
+        res = None
+        for hi, lo in zip(w.High, w.Low):
+            if (r.side == 1 and lo <= r.stop) or (r.side == -1 and hi >= r.stop):
+                res = -1.0; break
+            if (r.side == 1 and hi >= r.target) or (r.side == -1 and lo <= r.target):
+                res = abs(r.target - r.entry) / risk; break
+        if res is None and len(w) >= 48:
+            res = r.side * (w.Close.iat[-1] - r.entry) / risk
+        if res is not None:
+            rs.append(res)
+    if len(rs) < need:
+        return True, f"(この形の通知の実績 {len(rs)}回)"
+    tot = sum(rs)
+    return tot >= 0, f"(この形の直近{len(rs)}回の合計 {tot:+.1f}R)"
 EXIT_TEXT = {"eod": "届かなければ当日 日本時間朝5時に手仕舞い", "24h": "届かなければ24時間後に手仕舞い", None: "損切りか利確まで保有 (最長48時間)"}
 EXIT_VALID = {"H3": "当日 朝5時まで", "H4": "最長48時間", "H5": "24時間", "S": "最長72時間"}
 RULE_FN = {"H3": pf.h_tokyo_break, "H4": pf.h_range_trend, "H5": pf.h_event_momo}
@@ -299,7 +332,22 @@ def run(dry=False):
                                  f"{t.tz_convert(JST):%m/%d %H:%M} から{valid}", serious)
         send_at = learn.get("send_at", edge.SEND_AT)
         skip = score < send_at and key not in URGENT
-        log_signal(t, key, s, score, verdict, sent=not skip, conditions="|".join(x.split(" ")[0] for x in ok))
+        # 損小利大の形 (利確が損切りの RR_SEND 倍以上) のレンジ逆張りは、信頼度が低くても送る
+        # (23年で平均+0.07R・2022年以降+0.5R)。直近の成績がマイナスなら自動で止める
+        rr = abs(s["target"] - s["entry"]) / max(abs(s["entry"] - s["stop"]), 1e-9) if s.get("target") else 0
+        big_rr = key in RR_KEYS and rr >= RR_SEND and not serious
+        if skip and big_rr:
+            g_ok, g_txt = rr_guard(h)
+            if g_ok:
+                skip = False
+                title, body = fmt.signal(s["side"], s["entry"], s["stop"], s.get("target"), score,
+                                         reasons + [f"損小利大の形: 利益の幅が損切りの{rr:.1f}倍。過去23年の同じ形は勝率約3割でも平均プラス"
+                                                    f" (2022年以降は特に良い)。{g_txt}"], cautions,
+                                         f"{t.tz_convert(JST):%m/%d %H:%M} から{valid}", serious)
+            else:
+                print(f"(損小利大の形だが直近の成績がマイナスのため送らない: {g_txt})")
+        tags = "|".join(x.split(" ")[0] for x in ok) + ("|損小利大" if big_rr else "")
+        log_signal(t, key, s, score, verdict, sent=not skip, conditions=tags)
         if skip:
             print(f"(チャンスと判断しないため送らない: 信頼度{score}{'、担当AIと逆向き' if agree < 0 else ''}) {LABEL[key]}")
             st.setdefault("sent", []).append(sig_id)
