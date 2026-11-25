@@ -49,7 +49,7 @@ def run(now=None) -> list[dict]:
         q = []
     todo = ([{"unit": "定番", "q": s} for s in STANDING] if now.minute < 30 else []) + q[:PER_HOUR]
     rest = q[PER_HOUR:]
-    rows = []
+    rows, heads_by = [], {}
     for t in todo:
         if not groq.allowed("調査"):
             break
@@ -57,6 +57,7 @@ def run(now=None) -> list[dict]:
         if not heads:
             continue
         lines = "\n".join(f"- {(x['time'] + pd.Timedelta(hours=9)):%m/%d %H:%M} {x['title']}" for x in heads)
+        heads_by[t["q"]] = lines[:1500]
         r = groq.call("調査", f"FX (ドル円) の調査班。「{t['q']}」について直近24時間のニュースの見出し:\n{lines}\n"
                       "見出しに書かれていることだけを使い、推測はしない。JSON だけ: "
                       '{"要点": "60字以内", "ドル円への影響": -1〜1 (円安ドル高=+), "確かさ": 0〜1, "新しさ": "最も新しい見出しの時刻 MM/DD HH:MM"}')
@@ -69,6 +70,18 @@ def run(now=None) -> list[dict]:
             eff, conf = 0.0, 0.0
         rows.append({"time_utc": f"{now:%Y-%m-%d %H:%M}", "unit": t["unit"], "query": t["q"], "summary": str(r.get("要点", ""))[:90],
                      "effect": round(eff, 2), "confidence": round(conf, 2), "newest": str(r.get("新しさ", ""))[:12], "n": len(heads)})
+    if rows and now.minute < 30:   # Gemini が Groq のまとめを見出しと照らして確かめる (1時間に1回、最初の3件)
+        try:
+            from . import gem
+            chk = gem.call("調査の確認", "FX の調査班 (別のAI) が見出しからまとめた要点が、見出しの内容と合っているかを確かめる。"
+                           "見出しに無いことを書いていたら「疑わしい」。JSON だけ: {\"checks\": [\"合っている\" か \"疑わしい\", ...]} (順番どおり)\n\n"
+                           + "\n\n".join(f"{i + 1}. 調べたこと: {x['query']}\n要点: {x['summary']}\n見出し:\n{heads_by.get(x['query'], '')}"
+                                           for i, x in enumerate(rows[:3])))
+            if isinstance(chk, dict):
+                for x, v in zip(rows[:3], chk.get("checks", [])):
+                    x["checked"] = str(v)[:6]
+        except Exception as e:
+            print("調査の確認のエラー:", e)
     if rows:
         os.makedirs(os.path.dirname(PATH), exist_ok=True)
         pd.DataFrame(rows).to_csv(PATH, mode="a", header=not os.path.exists(PATH), index=False)

@@ -292,6 +292,24 @@ ADVISED = ("作戦部隊", "情報解析部隊", "相場分析部隊", "市場�
 VIEW_UNITS = ("情報解析部隊", "相場分析部隊")    # 向きの見立ても出させて、後で当たりを採点する
 
 
+def consult_gemini(res: dict) -> dict:
+    """Gemini の相談役 (Groq の相談役とは別の目)。情報解析部隊と相場分析部隊の見立てだけを出させて記録し、Groq と比べる"""
+    from . import gem
+    r = gem.call("相談役G", "あなたは FX (ドル円) の売買判断チームの相談役。以下の会議の中身だけを根拠に、情報解析部隊と相場分析部隊それぞれの"
+                 "24時間後のドル円の見立て (-1 下げ〜+1 上げ、分からなければ0) と、見落としを1つ (40字) 出す。"
+                 'JSON だけ: {"情報解析部隊": {"見立て": 0, "見落とし": ""}, "相場分析部隊": {"見立て": 0, "見落とし": ""}}\n\n' + text(res)[:2800])
+    out = {}
+    if isinstance(r, dict):
+        for u in ("情報解析部隊", "相場分析部隊"):
+            v = r.get(u, {}) if isinstance(r.get(u), dict) else {}
+            try:
+                out[f"AI相談役G見立て|{u}"] = max(-1.0, min(1.0, float(v.get("見立て", 0))))
+            except Exception:
+                pass
+            out[f"AI相談役G|{u}"] = str(v.get("見落とし", ""))[:60]
+    return out
+
+
 def consult(res: dict, every_hour=False) -> dict:
     """相談役AI (全部隊の補佐): 部隊ごとに「結論の弱いところ・見落とし・次に確かめること」を1つ助言。
     情報解析部隊と相場分析部隊の相談役は、自分の見立て (-1〜+1) も出す (記録して採点。判断には使わない)。
@@ -351,6 +369,7 @@ def log(h: pd.DataFrame) -> dict:
            "AI反対意見": devil(res) if (_now.hour % 2 == 0 and _now.minute < 30) else "",
            # 相談役: Groq の枠があれば毎時、無ければ Gemini で6時間に1回 (反対意見と重ならない 3・9・15・21時)
            **(consult(res) if (_groq_ok("相談役") or (_now.hour % 6 == 3 and _now.minute < 30)) else {}),
+           **(consult_gemini(res) if (_now.hour % 2 == 1 and _now.minute < 30) else {}),
            "監査": "; ".join(__import__("fxpred.org.auditor", fromlist=["x"]).meeting_check(res))[:200],
            "介入けん制の段階": max([int(o.get("stage", 0)) for o in ops if "stage" in o] or [0]),
            **{o["name"]: round(o["bias"], 3) for o in ops}}

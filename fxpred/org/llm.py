@@ -61,7 +61,7 @@ def ask(price: float, now=None) -> dict | None:
     st = _load()
     day = f"{now:%Y-%m-%d}"
     jh = (now + pd.Timedelta(hours=9)).hour
-    every = 3300 if (jh >= 10 or jh < 2) else 3 * 3600 - 300      # 無料枠の節約: 活動時間外 (2〜10時) は3時間に1回
+    every = 1500 if (jh >= 10 or jh < 2) else 3 * 3600 - 300      # 活動時間は30分ごと、時間外 (2〜10時) は3時間に1回
     if st.get("last") and time.time() - st.get("last_ts", 0) < every:
         return st.get("result")
     from . import gem

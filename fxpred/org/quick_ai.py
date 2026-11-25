@@ -7,6 +7,7 @@ import json
 import os
 import time
 
+import numpy as np
 import pandas as pd
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
@@ -49,6 +50,12 @@ def read(bars, levels: dict, st: dict) -> dict | None:
               f"会議の結論: {org}\n2時間以内の指標: {ev or 'なし'}\n調査班 (直近3時間): " + (" / ".join(rr) if rr else "なし"))
     r = groq.call("5分監視", prompt)
     cnt["n"] += 1
+    g = None
+    if time.gmtime(bars[-1][0]).tm_min % 15 < 5:     # 15分ごとに Gemini にも同じことを聞く (別の目で見た見立て)
+        from . import gem
+        g = gem.call("15分の見立て", prompt)
+    if not isinstance(r, dict) and isinstance(g, dict):
+        r, g = g, None
     if not isinstance(r, dict):
         return None
     try:
@@ -58,6 +65,13 @@ def read(bars, levels: dict, st: dict) -> dict | None:
         v, conf = 0.0, 0.0
     row = {"time_utc": time.strftime("%Y-%m-%d %H:%M", time.gmtime(bars[-1][0])), "price": round(c, 3), "view30": round(v, 2),
            "conf": round(conf, 2), "chance": str(r.get("チャンス", ""))[:6], "state": str(r.get("状況", ""))[:40], "caution": str(r.get("注意", ""))[:40]}
+    if isinstance(g, dict):
+        try:
+            row["g_view30"] = round(max(-1.0, min(1.0, float(g.get("向き30分", 0)))), 2)
+            row["g_conf"] = round(max(0.0, min(1.0, float(g.get("確かさ", 0)))), 2)
+        except Exception:
+            pass
+        row["g_state"] = str(g.get("状況", ""))[:40]
     try:
         os.makedirs(os.path.dirname(PATH), exist_ok=True)
         pd.DataFrame([row]).to_csv(PATH, mode="a", header=not os.path.exists(PATH), index=False)
@@ -80,6 +94,14 @@ def score(h: pd.DataFrame) -> list[str]:
         if k.sum() >= 10:
             hit = ((d.view30[k] > 0) == (fut[k] > d.price[k])).mean()
             out.append(f"5分監視の補佐: 向きを出した{int(k.sum())}回、{mins}分後の当たり {hit:.0%}")
+    if "g_view30" in d:
+        fut = c.reindex(d.t + pd.Timedelta(minutes=30), method="nearest", tolerance=pd.Timedelta(minutes=35)).values
+        k = d.g_view30.notna() & (d.g_view30.abs() >= 0.3) & pd.notna(fut)
+        if k.sum() >= 10:
+            out.append(f"Gemini の15分の見立て: {int(k.sum())}回、30分後の当たり {((d.g_view30[k] > 0) == (fut[k] > d.price[k])).mean():.0%}")
+        both = k & (d.view30.abs() >= 0.3) & (np.sign(d.view30) == np.sign(d.g_view30))
+        if both.sum() >= 10:
+            out.append(f"Groq と Gemini の向きが一致した時: {int(both.sum())}回、30分後の当たり {((d.view30[both] > 0) == (fut[both] > d.price[both])).mean():.0%}")
     ch = d[d.chance.astype(str).str.contains("候補")]
     if len(ch):
         out.append(f"チャンス候補を出した回数 {len(ch)} (確かさ0.7以上 {int((ch.conf >= 0.7).sum())})")
