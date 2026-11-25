@@ -33,6 +33,9 @@ def request(unit: str, queries: list[str]):
     have = {x["q"] for x in q}
     for s in queries[:2]:
         s = str(s).strip()[:40]
+        # 相談役の言葉があいまいだと暗号資産などの関係ない記事を拾うので、為替の言葉が無ければ「ドル円」を付ける
+        if s and not any(k in s for k in ("ドル", "円", "FRB", "日銀", "米", "為替", "金利", "介入")):
+            s = "ドル円 " + s
         if s and s not in have:
             q.append({"unit": unit, "q": s})
             have.add(s)
