@@ -235,9 +235,14 @@ def morning_message(h: pd.DataFrame, a: dict, fc: dict, reviews: list[dict], lea
         else:
             lines.append("ずれは想定内（変更なし）")
         lines.append(f"通算: 方向 {allr.hit_dir.mean():.0%}（{len(allr)}日）")
-    try:   # 朝の反省会 (良かった点・悪かった点。システムの変更はしない)
-        from .org import hansei
-        lines += hansei.lines(hansei.run(h))
+    try:   # 昨夜の復習 (夜2時台に AI と一緒に細かく反省したもの) から2行。無ければ簡単な反省
+        from . import nightly
+        nl = nightly.morning_lines()
+        if nl:
+            lines += ["━━━━━━━━━━"] + nl
+        else:
+            from .org import hansei
+            lines += hansei.lines(hansei.run(h))
     except Exception as e:
         print("反省会のエラー:", e)
     try:   # AI の組織 (検証中): 全統括AIの結論・リスク管理部隊・Gemini のまとめ・監査AI

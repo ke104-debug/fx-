@@ -1,6 +1,6 @@
 name: AI_FX 自動運用
 # 毎時: 相場の監視 (チャンス・急変の時だけ Discord に通知)
-# 毎朝10時 (日本時間): 昨日の振り返り・自己改善・今日の予想を通知し、記録 (journal/) をリポジトリに保存
+# 毎朝8時 (日本時間): 昨日の振り返り・今日の予想を通知。2時台に夜の復習。記録 (journal/) をリポジトリに保存
 on:
   schedule:
     # 毎時0〜5分は世界中の定期実行が集中して遅れ・取りこぼしが多いため、混雑を避けた17分・47分に実行
@@ -40,7 +40,7 @@ jobs:
         run: python -m fxpred testnotify
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-      - name: 監視 (朝10時台は予想・振り返りも)
+      - name: 監視 (朝8時台は予想・振り返り、2時台は夜の復習も)
         if: ${{ !inputs.test }}
         run: python -m fxpred auto ${{ inputs.morning && '--morning' || '' }}
         env:

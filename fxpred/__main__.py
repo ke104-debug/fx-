@@ -50,7 +50,7 @@ def main(argv):  # noqa: C901
         from . import quick
         quick.run(dry="--dry" in args)
     elif cmd == "auto":
-        # GitHub Actions から毎時実行: 日本時間10時台の最初の1回だけ朝の予想・振り返り、その後に監視
+        # GitHub Actions から毎時実行: 日本時間8時台の最初の1回だけ朝の予想・振り返り、2時台に夜の復習、その後に監視
         import os, json, pandas as pd
         from . import scan, dailyplan
         now = pd.Timestamp.now(tz="Asia/Tokyo")
@@ -65,7 +65,19 @@ def main(argv):  # noqa: C901
             json.dump(st, open(path, "w"), ensure_ascii=False, indent=1)
             if now.weekday() == 5:
                 return
-        if now.hour == 10 and st.get("morning_done") != f"{now:%Y-%m-%d}" and now.weekday() < 5 or "--morning" in args:
+        # 夜の復習 (運用時間外の日本時間 2時台に1回。火〜土の朝 = 月〜金の取引時間の分)
+        if now.hour == 2 and st.get("nightly_done") != f"{now:%Y-%m-%d}" and 1 <= now.weekday() <= 5 or "--nightly" in args:
+            from . import nightly, regime as rg
+            try:
+                nightly.run(rg.prepare(scan.load_recent()))
+            except Exception as e:
+                print("夜の復習のエラー:", e)
+            st = json.load(open(path)) if os.path.exists(path) else {}
+            st["nightly_done"] = f"{now:%Y-%m-%d}"
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            json.dump(st, open(path, "w"), ensure_ascii=False, indent=1)
+        # 朝の報告は日本時間 8時台 (利用者の指示。2026-11-25 までは10時台)
+        if now.hour == 8 and st.get("morning_done") != f"{now:%Y-%m-%d}" and now.weekday() < 5 or "--morning" in args:
             dailyplan.run()
             st = json.load(open(path)) if os.path.exists(path) else {}
             st["morning_done"] = f"{now:%Y-%m-%d}"
