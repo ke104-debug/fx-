@@ -13,6 +13,16 @@ import time
 
 import pandas as pd
 
+
+def _append(path, df):
+    """記録に行を足す。列が増えた時は、古い行と合わせて書き直す (列がずれて壊れないように)"""
+    if os.path.exists(path):
+        old = pd.read_csv(path)
+        if list(old.columns) != list(df.columns):
+            pd.concat([old, df], ignore_index=True).to_csv(path, index=False)
+            return
+    df.to_csv(path, mode="a", header=not os.path.exists(path), index=False)
+
 BUDGET = os.getenv("FX_GEMINI_BUDGET", "state/gemini_budget.json")
 DAILY_CAP = int(os.getenv("GEMINI_DAILY_CAP", "200"))   # Google の上限が分からない間の想定
 NORMAL_SHARE = 0.7
@@ -34,7 +44,7 @@ def record(job: str, model: str, outcome: str, code="", tokens=0):
         now = pd.Timestamp.now(tz="UTC")
         row = {"time_utc": f"{now:%Y-%m-%d %H:%M:%S}", "pt_day": _day(now), "job": job, "model": (model or "").split("/")[-1],
                "outcome": outcome, "code": code, "tokens": int(tokens or 0)}
-        pd.DataFrame([row]).to_csv(LEDGER, mode="a", header=not os.path.exists(LEDGER), index=False)
+        _append(LEDGER, pd.DataFrame([row]))
     except Exception:
         pass
 

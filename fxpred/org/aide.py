@@ -9,6 +9,16 @@ import os
 
 import pandas as pd
 
+
+def _append(path, df):
+    """記録に行を足す。列が増えた時は、古い行と合わせて書き直す (列がずれて壊れないように)"""
+    if os.path.exists(path):
+        old = pd.read_csv(path)
+        if list(old.columns) != list(df.columns):
+            pd.concat([old, df], ignore_index=True).to_csv(path, index=False)
+            return
+    df.to_csv(path, mode="a", header=not os.path.exists(path), index=False)
+
 PATH = os.path.join(os.path.dirname(__file__), "..", "..", "journal", "aide.csv")
 
 
@@ -42,7 +52,7 @@ def check(side: int, entry: float, stop: float, target: float, strategy: str, re
         row = {"time_utc": f"{now:%Y-%m-%d %H:%M}", "strategy": strategy, "side": side, "entry": round(entry, 3),
                "stop": round(stop, 3), "target": round(target, 3), "verdict": v, "reason": why, "verdict2": v2, "reason2": why2}
         os.makedirs(os.path.dirname(PATH), exist_ok=True)
-        pd.DataFrame([row]).to_csv(PATH, mode="a", header=not os.path.exists(PATH), index=False)
+        _append(PATH, pd.DataFrame([row]))
         line = f"統括補佐AI (検証中): {v} — {why}"
         if v2:
             line += f"\n　もう一人 (Groq): {v2} — {why2}" + (" (意見が割れた)" if v2 != v else "")

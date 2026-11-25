@@ -10,6 +10,16 @@ import time
 import numpy as np
 import pandas as pd
 
+
+def _append(path, df):
+    """記録に行を足す。列が増えた時は、古い行と合わせて書き直す (列がずれて壊れないように)"""
+    if os.path.exists(path):
+        old = pd.read_csv(path)
+        if list(old.columns) != list(df.columns):
+            pd.concat([old, df], ignore_index=True).to_csv(path, index=False)
+            return
+    df.to_csv(path, mode="a", header=not os.path.exists(path), index=False)
+
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 PATH = os.path.join(ROOT, "journal", "quick_ai.csv")
 
@@ -74,7 +84,7 @@ def read(bars, levels: dict, st: dict) -> dict | None:
         row["g_state"] = str(g.get("状況", ""))[:40]
     try:
         os.makedirs(os.path.dirname(PATH), exist_ok=True)
-        pd.DataFrame([row]).to_csv(PATH, mode="a", header=not os.path.exists(PATH), index=False)
+        _append(PATH, pd.DataFrame([row]))
     except Exception:
         pass
     return row

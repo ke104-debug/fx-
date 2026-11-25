@@ -13,6 +13,16 @@ import os
 import numpy as np
 import pandas as pd
 
+
+def _append(path, df):
+    """記録に行を足す。列が増えた時は、古い行と合わせて書き直す (列がずれて壊れないように)"""
+    if os.path.exists(path):
+        old = pd.read_csv(path)
+        if list(old.columns) != list(df.columns):
+            pd.concat([old, df], ignore_index=True).to_csv(path, index=False)
+            return
+    df.to_csv(path, mode="a", header=not os.path.exists(path), index=False)
+
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 J = os.path.join(ROOT, "journal")
 REVIEW = os.path.join(J, "nightly_review.csv")
@@ -132,7 +142,7 @@ def run(h: pd.DataFrame, now=None) -> dict:
         hy = [{"date": day, "by": who, "hypothesis": str(x)[:150]} for who, r in (("Gemini", out["gemini"]), ("Groq", out["groq"]))
               for x in (r.get("仮説") or []) if str(x).strip()]
         if hy:
-            pd.DataFrame(hy).to_csv(HYPO, mode="a", header=not os.path.exists(HYPO), index=False)
+            _append(HYPO, pd.DataFrame(hy))
     print(f"(夜の復習) {day}: 事実 {len(F)}件 / 仮説 Gemini {len(out['gemini'].get('仮説', []) or [])} Groq {len(out['groq'].get('仮説', []) or [])}")
     return out
 
