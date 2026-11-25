@@ -245,6 +245,15 @@ def run(dry=False):
                     st.pop("pending_rebound", None)
         except Exception as e:  # 詳しい分析に失敗しても、簡易監視は止めない
             print("AI分析エラー:", e)
+    if not dry:   # 重要指標の前後15分と急変の15分後のレポート (利用者の要望)
+        try:
+            from . import event_report as er
+            for fn in (er.pre, er.post, er.shock_followup):
+                m_ = fn(bars, now, st)
+                if m_:
+                    out.append(m_)
+        except Exception as e:
+            print("レポートのエラー:", e)
     if not dry:   # 重要指標の実況シミュレーション (発表の65分後以降に1回だけ結果を送る)
         try:
             from . import eventsim
