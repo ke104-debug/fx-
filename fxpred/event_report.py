@@ -1,6 +1,6 @@
 """重要指標 (🔴) の前後15分と、大きな出来事 (急変) の時のレポート (利用者の要望)。5分監視から呼ぶ。
 - 発表の約15分前: 今の価格・直近の動き・全統括AIの結論とリスク・指標前の傾向・調査班の報告・発表後の見方
-- 発表の約15分後: 結果 (ニュースの見出し) と予想・5分/15分の動き (普段の何倍か)・高値/安値・AI の読み (Groq) と判断の目安
+- 発表の約15分後: 結果 (🟠 は、結果が予想と大きく違い (AI が判定) 相場が大きく動いた時だけ) (ニュースの見出し) と予想・5分/15分の動き (普段の何倍か)・高値/安値・AI の読み (Groq) と判断の目安
 - 急変の約15分後: その後の動き (続いたか戻ったか)・原因らしいニュース・AI の読み
 判断の目安は、検証済みのものと試しのものをはっきり分けて書く。ルールは変えない。"""
 import statistics as stt
@@ -10,10 +10,10 @@ import pandas as pd
 JST = pd.Timedelta(hours=9)
 
 
-def _events():
+def _events(impacts=("High",)):
     from . import calendar as cal
     out = {}
-    for e in cal.events(impacts=("High",)):
+    for e in cal.events(impacts=impacts):
         out.setdefault(int(e["time"].timestamp()), []).append(e)
     return out
 
@@ -78,11 +78,13 @@ def pre(bars, now: int, st: dict):
 
 
 def post(bars, now: int, st: dict):
-    for r, evs in _events().items():
+    high = set(_events())
+    for r, evs in _events(("High", "Medium")).items():
         key = f"post-{r}"
         if not (r + 15 * 60 <= now <= r + 35 * 60) or st.get(key):
             continue
         st[key] = 1
+        medium = r not in high      # 🟠 は「予想と大きく違い、相場が大きく動いた時」だけ (下で判定)
         pre_ = [b for b in bars if b[0] < r]
         post_ = [b for b in bars if b[0] >= r]
         if not pre_ or not post_:
@@ -97,6 +99,19 @@ def post(bars, now: int, st: dict):
         keys = list(dict.fromkeys([e["title"].split(" (")[0][:12] for e in evs] + ["ドル円"]))
         hs = _heads(keys, since)
         heads = "\n".join(f"・{(x['time'] + JST):%H:%M} {x['title'][:70]}" for x in hs[:6]) or "・結果の見出しがまだ見つからない"
+        if medium:
+            impact = x15 >= 1.5 or x5 >= 2.5
+            if not impact:
+                continue
+            sv = _ai("経済指標の結果が市場予想とどれだけ違うかを判定する。見出しに書かれた数字だけを使う。"
+                     'JSON だけ: {"surprise": -2〜2 の整数 (予想より非常に強い=2, 強い=1, 予想どおり=0, 弱い=-1, 非常に弱い=-2, 分からない=0)}\n\n'
+                     f"指標: {' / '.join(e['title'] + ' 予想 ' + (e['forecast'] or '-') for e in evs[:4])}\n見出し:\n{heads}")
+            try:
+                big = abs(int(sv.get("surprise", 0))) >= 2
+            except Exception:
+                big = False
+            if not big and x15 < 2.5:    # AI が判定できない時は、相場の動きがかなり大きい時だけ
+                continue
         if x15 >= 1.5:
             guide = (f"15分で普段の{x15:.1f}倍動いた。過去の傾向では大きな最初の動きは戻りやすい → "
                      f"逆張り ({'売り' if m15 > 0 else '買い'}) が候補。ただし検証は数回分の試し。入るなら少額・損切りは15分の{'高値' if m15 > 0 else '安値'}の外")
@@ -112,7 +127,7 @@ def post(bars, now: int, st: dict):
         if ai:
             body += f"\nAIの読み (補助): {ai.get('読み方', '')} → {ai.get('判断', '')} ({ai.get('理由', '')})"
         body += "\n全統括AI: " + _org() + "\n※システムの作戦の条件がそろえば、別に売買の合図を送ります"
-        return ("📣 重要指標の15分後", body, 9807270)
+        return (("📣 中程度の指標で大きな動き (15分後)" if medium else "📣 重要指標の15分後"), body, 9807270)
     return None
 
 
