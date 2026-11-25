@@ -7,11 +7,15 @@ on:
   workflow_dispatch: {}
 permissions:
   contents: write
-concurrency: fx-shared
+# 1回起動したら30分間、中で5分ごとに見張り続ける (外の時計役や GitHub の定期実行が抜けても見張りが途切れないように)。
+# 実行中にもう1つ起動されたら順番待ち (1つだけ)。毎時の分析とは別の組なので、互いに待たせない
+concurrency:
+  group: fx-quick
+  cancel-in-progress: false
 jobs:
   quick:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -29,7 +33,23 @@ jobs:
           path: state/quick.json
           key: fx-quick-${{ github.run_id }}
           restore-keys: fx-quick-
-      - run: python -m fxpred.quick
+      - name: 30分間、5分ごとに見張る (毎回、記録を保存)
+        run: |
+          git config user.name "ai-fx-bot"
+          git config user.email "ai-fx-bot@users.noreply.github.com"
+          end=$(( $(date +%s) + 28*60 ))
+          while :; do
+            t0=$(date +%s)
+            python -m fxpred.quick || echo "5分監視のエラー (次の回で続ける)"
+            git add journal
+            if ! git diff --cached --quiet; then
+              git commit -qm "記録を更新 (5分監視) $(date -u +%Y-%m-%dT%H:%MZ)"
+              git pull --rebase -q || { git rebase --abort; git reset -q --hard origin/main; echo "記録の競合のため今回は保存を見送り"; }
+              git push -q || echo "保存に失敗 (次の回で記録し直す)"
+            fi
+            [ $(( $(date +%s) + 300 )) -gt $end ] && break
+            w=$(( 300 - ($(date +%s) - t0) )); [ $w -gt 0 ] && sleep $w
+          done
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

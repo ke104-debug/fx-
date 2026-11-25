@@ -1,7 +1,7 @@
 """数分ごとの簡易監視 (軽量: Python 標準機能だけで動く。pandas 等のインストール不要)
 
 1分足 (ほぼリアルタイム) を見て、次の時だけ動く:
-  急変    : 5/15/30/60分の動きが普段の4倍以上、または60分で1円以上 → すぐ Discord に通知 (時間外でも)
+  急変    : 5/15/30/60分の動きが普段の3.5倍以上、または60分で1円以上 → すぐ Discord に通知 (時間外でも)
   チャンス: 毎時のAI分析が決めた下値・上値 (state/levels.json) に近づいた / 抜けた
             → AI の詳しい分析 (fxpred.scan.quick_chance) を呼び、信頼度が基準以上なら通知 (活動時間内)
 普段は何も送らず、数秒で終わる。
@@ -42,7 +42,8 @@ def check(bars):
             mv = c - bars[-1 - k][4]
             moves[k] = (mv, abs(mv) / (sd * math.sqrt(k / 5)))
     worst = max(moves.items(), key=lambda kv: kv[1][1])
-    shock = worst[1][1] >= 4 or abs(moves.get(60, (0, 0))[0]) >= 1.0
+    # 急変の通知の基準: 普段の3.5倍以上 (2026-11-26 に4倍から変更。15分で3.9倍の急落を通知できなかったため)
+    shock = worst[1][1] >= 3.5 or abs(moves.get(60, (0, 0))[0]) >= 1.0
     return c, sd, moves, worst, shock
 
 
