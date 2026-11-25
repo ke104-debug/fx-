@@ -53,3 +53,27 @@ def against(side: int, st: dict | None) -> bool:
     if not st:
         return False
     return side * st["usd24"] < -0.5 or side * (-st["jpy24"]) < -0.5
+
+
+def word(z: float) -> str:
+    return "強い" if z >= 1 else "やや強い" if z >= 0.5 else "弱い" if z <= -1 else "やや弱い" if z <= -0.5 else "ふつう"
+
+
+def line(uj_close=None) -> str:
+    """レポート用の1行: ドルの強さ・円の強さ (4時間・24時間、普段の何倍か) と、今の動きがどちら主導か"""
+    x = fetch("10d")
+    if x is None or len(x) < 30:
+        return "ドル・円の強さ: 取得できず"
+    out = []
+    for n in (4, 24):
+        lr_u, lr_j = -np.log(x.eu).diff(n), -np.log(x.ej).diff(n)
+        # 普段の大きさ (直近10日の同じ長さの動きのばらつき) で割る
+        zu, zj = lr_u.iat[-1] / (lr_u.std() or 1e-9), lr_j.iat[-1] / (lr_j.std() or 1e-9)
+        out.append((n, zu, zj))
+    (_, u4, j4), (_, u24, j24) = out
+    lead = []
+    if abs(u4) >= 0.5 or abs(j4) >= 0.5:
+        lead.append("ドル" + ("高" if u4 > 0 else "安") if abs(u4) >= abs(j4) else "円" + ("高" if j4 > 0 else "安"))
+    return (f"ドルの強さ: 4時間 {u4:+.1f} ({word(u4)}) / 24時間 {u24:+.1f} ({word(u24)})\n"
+            f"円の強さ: 4時間 {j4:+.1f} ({word(j4)}) / 24時間 {j24:+.1f} ({word(j24)})"
+            + (f"\n→ 直近4時間は{lead[0]}が主導" if lead else "\n→ 直近4時間はどちらも目立たない"))

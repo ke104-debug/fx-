@@ -524,6 +524,11 @@ def run(dry=False):
                      + "".join(f"\n・{w_}: {y_}" for w_, y_ in res_["risk"]["items"][:2])
                      + "\n━━━━━━━━━━\n直近3時間の合図: " + (" / ".join(ev_) if ev_ else "なし (作戦の条件がそろわなかった)")
                      + "\n保有中: " + __import__("fxpred.positions", fromlist=["x"]).summary())
+            try:   # ドル・円の強さ
+                from .org import strength as _sg
+                body_ += "\n━━━━━━━━━━\n" + _sg.line()
+            except Exception:
+                pass
             try:   # 補助AIの無料枠の使用状況
                 from .org import gem as _g, groq as _q
                 body_ += "\n━━━━━━━━━━\n" + _g.status() + "\n" + _q.status()

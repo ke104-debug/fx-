@@ -32,6 +32,14 @@ def _org():
         return "記録なし"
 
 
+def _strength():
+    try:
+        from .org import strength
+        return "\n━━━━━━━━━━\n" + strength.line()
+    except Exception:
+        return ""
+
+
 def _heads(names, since, hours=1):
     from . import specialists as sp
     seen, out = set(), []
@@ -71,6 +79,7 @@ def pre(bars, now: int, st: dict):
                 "・過去の傾向 (2022年以降の米雇用統計): 前日〜当日は買いの決済で下げやすい (試し・回数少)\n"
                 "・発表直後の最初の動きは続かないことが多い (2022年以降、続いたのは37%)\n"
                 "・発表から約15分後に、結果と値動きのレポートを送ります")
+        body += _strength()
         if rr:
             body += "\n━━━━━━━━━━\n調査班:\n" + "\n".join(f"・{x[:70]}" for x in rr)
         return ("📣 重要指標の15分前", body, 9807270)
@@ -126,7 +135,7 @@ def post(bars, now: int, st: dict):
                 f"発表後の高値 {hi:.3f} / 安値 {lo:.3f} / 今 {now_px:.3f}\n━━━━━━━━━━\n目安: {guide}")
         if ai:
             body += f"\nAIの読み (補助): {ai.get('読み方', '')} → {ai.get('判断', '')} ({ai.get('理由', '')})"
-        body += "\n全統括AI: " + _org() + "\n※システムの作戦の条件がそろえば、別に売買の合図を送ります"
+        body += "\n全統括AI: " + _org() + _strength() + "\n※システムの作戦の条件がそろえば、別に売買の合図を送ります"
         return (("📣 中程度の指標で大きな動き (15分後)" if medium else "📣 重要指標の15分後"), body, 9807270)
     return None
 
@@ -154,5 +163,5 @@ def shock_followup(bars, now: int, st: dict):
     body = (f"{sh.get('dir', '急変')} の通知 ({(pd.Timestamp(t, unit='s', tz='UTC') + JST):%H:%M}, {p0:.3f}) から約15分\n"
             f"今 {c:.3f} (同じ向きに {cont:+.0f}pips) / その後の高値 {hi:.3f} 安値 {lo:.3f}\n"
             + ("→ 動きが続いている" if cont > 5 else "→ 戻している" if cont < -5 else "→ 止まっている")
-            + f"\n━━━━━━━━━━\n{heads}\n全統括AI: {_org()}")
+            + f"\n━━━━━━━━━━\n{heads}\n全統括AI: {_org()}" + _strength())
     return ("📣 急変の15分後", body, 9807270)

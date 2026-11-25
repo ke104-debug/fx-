@@ -163,6 +163,14 @@ def cause_text(causes: list[dict], start_epoch: int | None = None, direction: in
     return "\n".join(lines)
 
 
+def _strength_line():
+    try:
+        from .org import strength
+        return "\n" + strength.line()
+    except Exception:
+        return ""
+
+
 def run(dry=False):
     from . import notify
     t0 = time.time()
@@ -198,6 +206,7 @@ def run(dry=False):
             body = (f"**{k}分で {mv:+.2f}円**（普段の{z:.1f}倍）\n"
                     f"60分: {moves.get(60, (0, 0))[0]:+.2f}円 / 15分: {moves.get(15, (0, 0))[0]:+.2f}円\n"
                     "━━━━━━━━━━\n" + cause_text(causes, now - k * 60, 1 if mv > 0 else -1) +
+                    + _strength_line()
                     + (f"\n【AIの見立て (Groq)】{qa['state']}" + (f" / 注意: {qa['caution']}" if qa.get("caution") else "") if qa else "")
                     + "\n━━━━━━━━━━\n今は入らないでください。\n下げ止まり・上げ止まりをAIが確認したら、売買の判断を通知します。")
             if not causes:
