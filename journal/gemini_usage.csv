@@ -15,3 +15,4 @@ time_utc,pt_day,job,model,outcome,code,tokens
 2026-11-25 09:21:24,2026-11-25,相談役G,gemini-3.1-flash-lite,fail,TimeoutError,0
 2026-11-25 09:22:05,2026-11-25,調査の確認,gemini-3.1-flash-lite,ok,,1896
 2026-11-25 09:22:10,2026-11-25,ニュース,gemini-3.8-flash,fail,503,0
+2026-11-25 09:22:58,2026-11-25,ニュース,gemini-3.8-flash,fail,503,0
