@@ -178,6 +178,14 @@ def run(dry=False):
     wk = positions.weekend_note(now)
     if wk and st.get("weekend_warned") != time.strftime("%Y-%m-%d", time.gmtime(now)):
         out.append(wk); st["weekend_warned"] = time.strftime("%Y-%m-%d", time.gmtime(now))
+    # 0) 5分監視の補佐 (Groq): 今の状況・30分後の見立て・注意を記録 (急変の通知にも添える)。判断は変えない
+    qa = None
+    if not dry:
+        try:
+            from .org import quick_ai
+            qa = quick_ai.read(bars, lv, st)
+        except Exception as e:
+            print("5分監視の補佐のエラー:", e)
     # 1) 急変 (時間外でも送る)。同じ向きの急変は30分に1回まで (さらに大きくなった時は再通知)
     if shock:
         k, (mv, z) = worst
@@ -189,7 +197,8 @@ def run(dry=False):
             body = (f"**{k}分で {mv:+.2f}円**（普段の{z:.1f}倍）\n"
                     f"60分: {moves.get(60, (0, 0))[0]:+.2f}円 / 15分: {moves.get(15, (0, 0))[0]:+.2f}円\n"
                     "━━━━━━━━━━\n" + cause_text(causes, now - k * 60, 1 if mv > 0 else -1) +
-                    "\n━━━━━━━━━━\n今は入らないでください。\n下げ止まり・上げ止まりをAIが確認したら、売買の判断を通知します。")
+                    + (f"\n【AIの見立て (Groq)】{qa['state']}" + (f" / 注意: {qa['caution']}" if qa.get("caution") else "") if qa else "")
+                    + "\n━━━━━━━━━━\n今は入らないでください。\n下げ止まり・上げ止まりをAIが確認したら、売買の判断を通知します。")
             if not causes:
                 st["cause_pending"] = {"start": now - k * 60, "dir": 1 if mv > 0 else -1, "until": now + 1800, "label": direction}
             out.append((title, body, 16776960))

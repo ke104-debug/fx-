@@ -124,6 +124,8 @@ def review(h: pd.DataFrame, days: int, monthly: bool) -> tuple[str, str]:
         lines += ["", "**シミュレーション・検証部隊 (進言の再検証)**"] + [f"・{x}" for x in org_review.run()]
         from .org import aide
         lines += ["", "**統括補佐AI の答え合わせ**"] + [f"・{x}" for x in aide.score(h)]
+        from .org import quick_ai
+        lines += [f"・{x}" for x in quick_ai.score(h)]
         from .org import postmortem
         lines += ["", "**原因究明部隊**"] + [f"・{x}" for x in postmortem.run(h)]
         try:
