@@ -22,6 +22,10 @@ PATH = os.path.join(ROOT, "journal", "research.csv")
 QUEUE = os.getenv("FX_RESEARCH_QUEUE", "state/research_queue.json")
 STANDING = ["ドル円 介入 OR 財務官", "FRB 高官 発言", "日銀 総裁 OR 審議委員 発言", "米国債 利回り", "円相場 要因"]
 PER_HOUR = 6        # 30分ごとの依頼の上限 (定番は1時間に1回)
+# 利用者が寝ている時間 (日本時間 1〜10時) は、空いている無料枠で海外 (英語) のニュースを多めに調べる (利用者の指示 11/26)。
+# この時間は欧米の取引時間なので、日本語のニュースより英語の方が早い。30分ごとに半分ずつ
+NIGHT = ["USD JPY", "Federal Reserve rate outlook", "Fed officials speech", "Treasury yields", "Bank of Japan policy",
+         "Japan yen intervention", "US economy data", "dollar index DXY", "Japan government bond yields", "risk sentiment stocks oil"]
 
 
 def request(unit: str, queries: list[str]):
@@ -61,6 +65,10 @@ def run(now=None) -> list[dict]:
     except Exception:
         q = []
     todo = ([{"unit": "定番", "q": s} for s in STANDING] if now.minute < 30 else []) + q[:PER_HOUR]
+    jh = (now + pd.Timedelta(hours=9)).hour
+    if 1 <= jh < 10:
+        half = NIGHT[:5] if now.minute < 30 else NIGHT[5:]
+        todo += [{"unit": "夜の調査", "q": s, "lang": "en"} for s in half]
     rest = q[PER_HOUR:]
     rows, heads_by = [], {}
     for t in todo:
@@ -68,13 +76,13 @@ def run(now=None) -> list[dict]:
             break
         import time as _t
         _t.sleep(2)     # 1分あたりの量の上限に当たらないよう少し間をあける
-        heads = sp.headlines(query=t["q"], hours=24)[:15]
+        heads = sp.headlines(query=t["q"], hours=12 if t.get("lang") == "en" else 24, lang=t.get("lang", "ja"))[:15]
         if not heads:
             continue
         lines = "\n".join(f"- {(x['time'] + pd.Timedelta(hours=9)):%m/%d %H:%M} {x['title']}" for x in heads)
         heads_by[t["q"]] = lines[:1500]
         r = groq.call("調査", f"FX (ドル円) の調査班。「{t['q']}」について直近24時間のニュースの見出し:\n{lines}\n"
-                      "見出しに書かれていることだけを使い、推測はしない。JSON だけ: "
+                      "見出しに書かれていることだけを使い、推測はしない。英語の見出しでも答えは日本語で。JSON だけ: "
                       '{"要点": "60字以内", "ドル円への影響": -1〜1 (円安ドル高=+), "確かさ": 0〜1, "新しさ": "最も新しい見出しの時刻 MM/DD HH:MM"}')
         if not isinstance(r, dict):
             continue

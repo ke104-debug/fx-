@@ -1,0 +1,45 @@
+name: AI_FX 夜の検証部屋
+# 利用者が寝ている時間 (日本時間 3時台、火〜土) に、シミュレーションと記録の答え合わせを回す。通知はしない。
+# 公開リポジトリのため Actions は無料。AI (Gemini/Groq) は使わない。監視とは別の組なので、監視を待たせない
+on:
+  schedule:
+    - cron: "23 18 * * 1-5"    # 日本時間 3:23 (火〜土)
+  workflow_dispatch:
+    inputs:
+      train:
+        description: "15分足のモデルを作り直す"
+        type: boolean
+        default: false
+permissions:
+  contents: write
+concurrency:
+  group: fx-lab
+  cancel-in-progress: false
+jobs:
+  lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13", cache: pip }
+      - run: pip install -r requirements.txt
+      - name: 23年分の1分足 (data-m1 ブランチ) を取り出す
+        run: |
+          git fetch -q --depth 1 origin data-m1
+          mkdir -p data && git archive FETCH_HEAD m1 | tar -x -C data
+          ls data/m1 | wc -l
+      - name: 検証
+        run: python -m fxpred.nightlab ${{ inputs.train && '--train' || '' }}
+      - name: 記録をリポジトリに保存
+        run: |
+          git config user.name "ai-fx-bot"
+          git config user.email "ai-fx-bot@users.noreply.github.com"
+          git add journal/m15_shadow.csv reports/nightlab.md models 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m "夜の検証部屋 $(date -u +%Y-%m-%dT%H:%MZ)"
+            for i in 1 2 3; do
+              git pull --rebase -q && git push -q && break
+              git rebase --abort 2>/dev/null; sleep 10
+            done
+          fi

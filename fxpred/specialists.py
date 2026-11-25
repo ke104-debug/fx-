@@ -25,9 +25,10 @@ CAUSES = {
 }
 
 
-def headlines(query="ドル円", hours=24) -> list[dict]:
+def headlines(query="ドル円", hours=24, lang="ja") -> list[dict]:
+    loc = {"ja": ("ja", "JP", "JP:ja"), "en": ("en-US", "US", "US:en")}[lang]
     url = "https://news.google.com/rss/search?" + urllib.parse.urlencode(
-        {"q": f"{query} when:1d", "hl": "ja", "gl": "JP", "ceid": "JP:ja"})
+        {"q": f"{query} when:1d", "hl": loc[0], "gl": loc[1], "ceid": loc[2]})
     try:
         xml = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"}), timeout=15).read()
     except Exception:

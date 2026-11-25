@@ -160,6 +160,11 @@ def review(h: pd.DataFrame, days: int, monthly: bool) -> tuple[str, str]:
         except Exception as e:
             print("仮説のまとめのエラー:", e)
         try:
+            from . import nightlab
+            lines += ["", "**夜の検証部屋**"] + [f"・{x.strip()}" for x in nightlab.summary()]
+        except Exception as e:
+            print("夜の検証部屋のエラー:", e)
+        try:
             from .org import readiness
             lines += ["", "**自動売買への準備度**"] + [f"・{x}" for x in readiness.check(h)]
         except Exception as e:
