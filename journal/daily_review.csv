@@ -1,0 +1,3 @@
+time_utc,date,verdict,actual,move,hit_dir,high,low,range_ratio,in_range,support_broken,resistance_broken,hit_急変担当,hit_レンジ担当,hit_トレンド担当,big_miss,cause,lessons
+2026-11-23 12:00,2026-11-23,売り寄り,横ばい,0.12,False,159.58,158.75,1.06,False,False,False,False,,False,,,方向を外した: 予想 売り寄り → 実際 横ばい (+0.12円)
+2026-11-24 01:00,2026-11-24,中立,上昇,0.31,False,159.58,158.75,1.19,False,True,True,False,True,False,,,方向を外した: 予想 中立 → 実際 上昇 (+0.31円) / 下値 158.88 を割り込んだ / 上値 159.48 を上抜けた
