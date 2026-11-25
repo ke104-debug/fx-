@@ -1,0 +1,2 @@
+time_utc,strategy,side,entry,stop,target,verdict,reason,verdict2,reason2
+2026-11-25 05:59,レンジ逆張り (流れの方向),-1,159.422,159.72,159.04,見送るべき,株安でもドル買い継続と底堅く、指標前で方向感が不透明なため。,慎重に,PCE・GDP待ちで不確実性高
