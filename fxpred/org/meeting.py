@@ -326,7 +326,10 @@ def log(h: pd.DataFrame) -> dict:
     """影の運用: 会議の結果を journal/org.csv に1時間1行で残す (通知はしない)"""
     res = final(h)
     ops = res["ops"]
-    row = {"time_utc": f"{h.index[-1] + pd.Timedelta(hours=1):%Y-%m-%d %H:%M}", "price": round(float(h.Close.iat[-1]), 3),
+    key = f"{h.index[-1] + pd.Timedelta(hours=1):%Y-%m-%d %H:%M}"
+    if os.path.exists(LOG) and key in set(pd.read_csv(LOG, usecols=["time_utc"]).time_utc):
+        return res      # この時間はもう記録済み (同じ時間に2回目の実行)。AI を呼ばずに終わる (無料枠の節約)
+    row = {"time_utc": key, "price": round(float(h.Close.iat[-1]), 3),
            "overall": res["overall"], "verdict": res["verdict"], "caution": res["caution"],
            "risk": res["risk"]["level"], "conclusion": res["conclusion"], "conflict": res["market"]["conflict"], "secs": res["secs"],
            "AI反対意見": devil(res) if (h.index[-1].hour % 2 == 0) else "",
