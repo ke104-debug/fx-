@@ -258,6 +258,13 @@ def text(res: dict) -> str:
         L.append(f"【リスク統括】{res['risk']['text']}" + "".join(f"\n  ・{who}: {why}" for who, why in res["risk"]["items"]))
     if res.get("stale"):
         L.append("【鮮度】古いので使わなかった意見: " + " / ".join(res["stale"]))
+    try:
+        from . import research
+        rr = research.recent()
+        if rr:
+            L.append("【調査班の報告 (直近6時間)】" + "".join(f"\n  ・{x}" for x in rr))
+    except Exception:
+        pass
     for d, g in res["depts"].items():
         sc = "判断に使う意見なし" if g["score"] is None else f"{g['score']:+.2f}"
         L.append(f"【{d}】{sc}")
@@ -291,10 +298,11 @@ def consult(res: dict, every_hour=False) -> dict:
     Groq の無料枠がある時は毎時、無い時は Gemini で6時間に1回。1回の呼び出しで全部隊分"""
     from . import groq
     from .. import positions
-    keys = ", ".join(f'"{u}": {{"助言": ""' + (', "見立て": 0' if u in VIEW_UNITS else "") + "}" for u in ADVISED)
+    keys = ", ".join(f'"{u}": {{"助言": "", "調べてほしいこと": [""]' + (', "見立て": 0' if u in VIEW_UNITS else "") + "}" for u in ADVISED)
     r, who = groq.ask("相談役", "あなたは FX (ドル円) の売買判断チームの各部隊の相談役 (部隊ごとに1人ずつ)。以下の会議の中身を読み、"
                       "部隊ごとに「結論の弱いところ・見落とし・次に確かめるべきこと」を1つ、各50字以内で助言する。"
                       "情報解析部隊と相場分析部隊の相談役は、この後24時間のドル円の見立てを -1 (下げ)〜+1 (上げ) で付ける (分からなければ0)。"
+                      "さらに、判断の精度を上げるために調査班に調べてほしいことを、ニュースを検索する言葉で最大2つ (例: \"日銀 利上げ 12月\")。"
                       "根拠は会議の中身と保有中だけ。JSON だけ: {" + keys + "}\n\n"
                       + text(res)[:2800] + f"\n【保有中】{positions.summary()}")
     if not isinstance(r, dict):
@@ -305,6 +313,12 @@ def consult(res: dict, every_hour=False) -> dict:
         if isinstance(v, str):
             v = {"助言": v}
         out[f"AI相談役|{u}"] = str(v.get("助言", ""))[:80]
+        try:
+            from . import research
+            qs = v.get("調べてほしいこと") or []
+            research.request(u, [x for x in (qs if isinstance(qs, list) else [qs]) if x])
+        except Exception:
+            pass
         if u in VIEW_UNITS:
             try:
                 out[f"AI相談役見立て|{u}"] = max(-1.0, min(1.0, float(v.get("見立て", 0))))

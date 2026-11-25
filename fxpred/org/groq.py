@@ -17,7 +17,8 @@ import pandas as pd
 API = "https://api.groq.com/openai/v1"
 BUDGET = os.getenv("FX_GROQ_BUDGET", "state/groq_budget.json")
 UNTIL = pd.Timestamp("2026-12-25", tz="UTC")
-JOBS = {"統括補佐": 12, "反対意見": 16, "相談役": 26, "監査の補助": 4, "検証の補助": 2}
+JOBS = {"統括補佐": 12, "反対意見": 16, "相談役": 26, "監査の補助": 4, "検証の補助": 2, "調査": 320}
+DAY_CAP = 500   # 利用者の指示: 1日1,000回の無料枠のうち500回までは使ってよい
 
 
 def _day():
@@ -66,6 +67,8 @@ def allowed(job: str) -> bool:
         return False
     b = _load()
     if b["by"].get(job, 0) >= JOBS.get(job, 4):
+        return False
+    if b["count"] >= DAY_CAP and job != "統括補佐":     # 合図の最終確認だけは上限の後も (残り2割の手前まで)
         return False
     lim = b.get("limits", {}).get(b.get("model") or "", {})
     if lim.get("limit") and lim.get("remaining") is not None and lim["remaining"] < 0.2 * lim["limit"]:

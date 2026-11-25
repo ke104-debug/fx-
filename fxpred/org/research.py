@@ -1,0 +1,88 @@
+"""調査班 (Groq 無料枠): ほかの担当 (相談役) が「調べてほしい」と頼んだことと、毎時の定番の調べものを、
+Google ニュースの見出しから集めて Groq に読ませ、要点・ドル円への影響・確かさをまとめる。
+Groq は自分でネットを見ないので、集めるのはこのプログラム (無料の RSS)。結果は journal/research.csv と、次の会議の中身に入る。
+回数: 定番 5件 + 依頼 最大8件 / 時 (1日 約300回まで)。Groq の1日の合計は 500回まで (groq.DAY_CAP)。判断の重みは0 (記録して採点)"""
+import json
+import os
+
+import pandas as pd
+
+ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
+PATH = os.path.join(ROOT, "journal", "research.csv")
+QUEUE = os.getenv("FX_RESEARCH_QUEUE", "state/research_queue.json")
+STANDING = ["ドル円 介入 OR 財務官", "FRB 高官 発言", "日銀 総裁 OR 審議委員 発言", "米国債 利回り", "円相場 要因"]
+PER_HOUR = 8
+
+
+def request(unit: str, queries: list[str]):
+    """相談役などからの調査の依頼を順番待ちに入れる (同じ言葉は1回だけ)"""
+    try:
+        q = json.load(open(QUEUE))
+    except Exception:
+        q = []
+    have = {x["q"] for x in q}
+    for s in queries[:2]:
+        s = str(s).strip()[:40]
+        if s and s not in have:
+            q.append({"unit": unit, "q": s})
+            have.add(s)
+    os.makedirs(os.path.dirname(QUEUE) or ".", exist_ok=True)
+    json.dump(q[-40:], open(QUEUE, "w"), ensure_ascii=False)
+
+
+def run(now=None) -> list[dict]:
+    from . import groq
+    from .. import specialists as sp
+    now = now or pd.Timestamp.now(tz="UTC")
+    mark = QUEUE + ".last"
+    try:   # 毎時の分析は1時間に2回動くので、調査は1時間に1回だけ
+        if open(mark).read().strip() == f"{now:%Y-%m-%d %H}":
+            return []
+    except Exception:
+        pass
+    os.makedirs(os.path.dirname(mark) or ".", exist_ok=True)
+    open(mark, "w").write(f"{now:%Y-%m-%d %H}")
+    try:
+        q = json.load(open(QUEUE))
+    except Exception:
+        q = []
+    todo = [{"unit": "定番", "q": s} for s in STANDING] + q[:PER_HOUR]
+    rest = q[PER_HOUR:]
+    rows = []
+    for t in todo:
+        if not groq.allowed("調査"):
+            break
+        heads = sp.headlines(query=t["q"], hours=24)[:15]
+        if not heads:
+            continue
+        lines = "\n".join(f"- {(x['time'] + pd.Timedelta(hours=9)):%m/%d %H:%M} {x['title']}" for x in heads)
+        r = groq.call("調査", f"FX (ドル円) の調査班。「{t['q']}」について直近24時間のニュースの見出し:\n{lines}\n"
+                      "見出しに書かれていることだけを使い、推測はしない。JSON だけ: "
+                      '{"要点": "60字以内", "ドル円への影響": -1〜1 (円安ドル高=+), "確かさ": 0〜1, "新しさ": "最も新しい見出しの時刻 MM/DD HH:MM"}')
+        if not isinstance(r, dict):
+            continue
+        try:
+            eff = max(-1.0, min(1.0, float(r.get("ドル円への影響", 0))))
+            conf = max(0.0, min(1.0, float(r.get("確かさ", 0))))
+        except Exception:
+            eff, conf = 0.0, 0.0
+        rows.append({"time_utc": f"{now:%Y-%m-%d %H:%M}", "unit": t["unit"], "query": t["q"], "summary": str(r.get("要点", ""))[:90],
+                     "effect": round(eff, 2), "confidence": round(conf, 2), "newest": str(r.get("新しさ", ""))[:12], "n": len(heads)})
+    if rows:
+        os.makedirs(os.path.dirname(PATH), exist_ok=True)
+        pd.DataFrame(rows).to_csv(PATH, mode="a", header=not os.path.exists(PATH), index=False)
+    try:
+        json.dump(rest, open(QUEUE, "w"), ensure_ascii=False)
+    except Exception:
+        pass
+    return rows
+
+
+def recent(hours=6, n=6) -> list[str]:
+    """会議の中身に入れる、直近の調査の要点"""
+    if not os.path.exists(PATH):
+        return []
+    d = pd.read_csv(PATH)
+    d = d[pd.to_datetime(d.time_utc, utc=True) >= pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=hours)]
+    d = d.sort_values("confidence", ascending=False).drop_duplicates("query").head(n)
+    return [f"{r.query}: {r.summary} (影響 {r.effect:+.1f}・確かさ {r.confidence:.1f})" for r in d.itertuples()]

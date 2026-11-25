@@ -485,6 +485,13 @@ def run(dry=False):
             print("(補助AI)", _gq.status())
         except Exception:
             pass
+        try:   # 調査班 (Groq): 相談役の依頼と定番の調べもの。次の会議の中身に入る
+            from .org import research as _rs
+            _rr = _rs.run()
+            if _rr:
+                print(f"(調査班) {len(_rr)}件: " + " / ".join(f"{x['query']}→{x['summary'][:25]}" for x in _rr[:3]))
+        except Exception as e:
+            print("調査班のエラー:", e)
         try:   # 30〜90分後に重要指標があれば、予想と紙の上で試す作戦を1回だけ知らせる
             from . import eventsim
             fc = eventsim.forecast(h, res)
