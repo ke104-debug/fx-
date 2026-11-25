@@ -111,16 +111,7 @@ def run(h: pd.DataFrame, now=None) -> dict:
     if not bad:
         bad.append("目立って悪かった点はなし")
     res = {"date": f"{(t0 + pd.Timedelta(hours=9)):%Y-%m-%d}", "facts": facts, "good": good, "bad": bad}
-    # Gemini に良かった点・悪かった点を一言でまとめさせる (無料枠に余裕がある時だけ)
-    try:
-        from . import gem
-        ai = gem.call("反省", "FX (ドル円) の売買判断システムの昨日の反省会。以下の事実だけを根拠に、良かった点と悪かった点を各1つ、"
-                      "40字以内で。システムの変更案は出さない。JSON だけ: {\"good\": \"\", \"bad\": \"\"}\n\n"
-                      + "\n".join(facts + ["良:" + x for x in good] + ["悪:" + x for x in bad]))
-        if isinstance(ai, dict):
-            res["ai"] = f"良: {str(ai.get('good', ''))[:50]} / 悪: {str(ai.get('bad', ''))[:50]}"
-    except Exception:
-        pass
+    # 朝の通知は軽くする (利用者の指示)。詳しい反省は記録に残し、聞かれた時と週次の見直しで使う。Gemini は呼ばない
     try:
         p = os.path.join(J, "reflections.csv")
         row = {"date": res["date"], "facts": " | ".join(facts), "good": " | ".join(good), "bad": " | ".join(bad), "ai": res.get("ai", "")}
@@ -133,9 +124,5 @@ def run(h: pd.DataFrame, now=None) -> dict:
 
 
 def lines(res: dict) -> list[str]:
-    L = ["━━━━━━━━━━", f"昨日の反省会 ({res['date']} 10時〜今朝10時、システムの変更はしない)"]
-    L += [f"・{x}" for x in res["facts"][:5]]
-    L += [f"○ {x}" for x in res["good"][:3]] + [f"× {x}" for x in res["bad"][:3]]
-    if res.get("ai"):
-        L.append(f"・AIのまとめ: {res['ai']}")
-    return L
+    """朝の通知用に2行だけ (詳しくは journal/reflections.csv)"""
+    return ["━━━━━━━━━━", f"昨日の反省: ○ {res['good'][0][:45]} / × {res['bad'][0][:45]}"]

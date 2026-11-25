@@ -16,10 +16,10 @@ ORG = os.path.join(os.path.dirname(__file__), "..", "journal", "org.csv")
 COST = 0.008
 
 
-def _events():
+def _events(impacts=("High",)):
     from . import calendar as cal
     out = {}
-    for e in cal.events(impacts=("High",)):
+    for e in cal.events(impacts=impacts):
         out.setdefault(int(e["time"].timestamp()), []).append(e["title"])
     return out
 
@@ -95,7 +95,8 @@ def simulate(bars, r: int) -> dict | None:
 def run(bars, now: int) -> list[tuple[str, str, int]]:
     """5分監視から呼ぶ。結果が出た指標があれば通知を返す"""
     done, out = _done(), []
-    for r, titles in _events().items():
+    high = set(_events(("High",)))
+    for r, titles in _events(("High", "Medium")).items():   # 🟠 も記録して回数を早くためる (通知は🔴だけ)
         key = f"{pd.Timestamp(r, unit='s', tz='UTC'):%Y-%m-%d %H:%M}"
         if key in done or not (r + 65 * 60 <= now <= r + 6 * 3600):
             continue
@@ -103,6 +104,7 @@ def run(bars, now: int) -> list[tuple[str, str, int]]:
         if not res:
             continue
         res["events"] = " / ".join(titles)[:200]
+        res["impact"] = "High" if r in high else "Medium"
         old = pd.read_csv(PATH) if os.path.exists(PATH) else pd.DataFrame()
         allr = pd.concat([old, pd.DataFrame([res])])
         os.makedirs(os.path.dirname(PATH), exist_ok=True)
@@ -113,6 +115,8 @@ def run(bars, now: int) -> list[tuple[str, str, int]]:
                 f"60分 {res['move_60']:+.1f}pips (高値 {res['high_60']:.3f} 安値 {res['low_60']:.3f})\n━━━━━━━━━━\n"
                 f"A 順張り5分: {f('A')}\nB 逆張り15分: {f('B')}\nC 組織の判断「{res['org'][:30]}」: {res['C']:+.1f}pips\n━━━━━━━━━━\n"
                 f"これまで{len(allr)}回の合計: A {tot['A']:+.1f} / B {tot['B']:+.1f} / C {tot['C']:+.1f} pips (紙の上の売買)")
+        if r not in high:
+            continue
         out.append((f"🧪 指標の実況シミュレーション結果 ({(pd.Timestamp(r, unit='s', tz='UTC') + pd.Timedelta(hours=9)):%m/%d %H:%M})", body, 9807270))
     return out
 
