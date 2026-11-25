@@ -244,7 +244,13 @@ def call(job: str, prompt: str, as_json=True, temperature=0.2) -> dict | str | N
             return json.loads(txt) if as_json else txt.strip()
         except Exception as e:
             kind = learn(e, m)
-            record(job, m, "fail", code=f"429{kind}" if kind else str(getattr(e, "code", "") or type(e).__name__)[:20])
+            code = getattr(e, "code", None)
+            record(job, m, "fail", code=f"429{kind}" if kind else str(code or type(e).__name__)[:20])
+            if code == 404:
+                exhausted(m)          # 一覧に出ても使えないモデル → その日は使わない
+            if code in (500, 502, 503, 504) or "timed out" in str(e):
+                errs.append(f"{m.split('/')[-1]}: {code or 'timeout'} (Google が混雑。他のモデルも試さずにやめる)")
+                break                 # 混雑の時に次々とモデルを試すと、無駄な呼び出しが増えるだけ
             if kind:
                 quota_hits += 1
             if kind == "day":

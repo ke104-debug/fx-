@@ -115,7 +115,13 @@ def ask(price: float, now=None) -> dict | None:
             break
         except Exception as e:
             q = gem.learn(e, m)
-            gem.record("ニュース", m, "fail", code=f"429{q}" if q else str(getattr(e, "code", "") or type(e).__name__)[:20])
+            code = getattr(e, "code", None)
+            gem.record("ニュース", m, "fail", code=f"429{q}" if q else str(code or type(e).__name__)[:20])
+            if code == 404:
+                gem.exhausted(m)
+            if code in (500, 502, 503, 504) or "timed out" in str(e):
+                errs.append(f"{m.split('/')[-1]}: {code or 'timeout'}")
+                break
             if q == "day":
                 gem.exhausted(m)
             errs.append(f"{m.split('/')[-1]}: {('429(' + q + ') ') if q else ''}{str(e)[:60]}")
