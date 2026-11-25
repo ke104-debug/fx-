@@ -524,6 +524,11 @@ def run(dry=False):
                      + "".join(f"\n・{w_}: {y_}" for w_, y_ in res_["risk"]["items"][:2])
                      + "\n━━━━━━━━━━\n直近3時間の合図: " + (" / ".join(ev_) if ev_ else "なし (作戦の条件がそろわなかった)")
                      + "\n保有中: " + __import__("fxpred.positions", fromlist=["x"]).summary())
+            try:   # 補助AIの無料枠の使用状況
+                from .org import gem as _g, groq as _q
+                body_ += "\n━━━━━━━━━━\n" + _g.status() + "\n" + _q.status()
+            except Exception:
+                pass
             msgs.append(("info", f"📋 相場の状況 ({jn:%H}時)", body_))
             st["status_slot"] = slot
     except Exception as e:

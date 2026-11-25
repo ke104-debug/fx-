@@ -98,7 +98,7 @@ def ask(price: float, now=None) -> dict | None:
     res, model, errs, tokens = None, None, [], 0
     try:
         allm = _models()
-        gem.set_models(len(allm))
+        gem.set_models(len(allm), allm)
         cands = ([st["model"]] if st.get("model") in allm else []) + [m for m in allm if m != st.get("model")]
     except Exception as e:
         print("Gemini のモデル一覧を取れませんでした:", str(e)[:120])
@@ -111,9 +111,11 @@ def ask(price: float, now=None) -> dict | None:
             res = json.loads(txt)
             model = m
             tokens = out.get("usageMetadata", {}).get("totalTokenCount", 0)
+            gem.record("ニュース", m, "ok", tokens=tokens)
             break
         except Exception as e:
-            q = gem.learn(e)
+            q = gem.learn(e, m)
+            gem.record("ニュース", m, "fail", code=f"429{q}" if q else str(getattr(e, "code", "") or type(e).__name__)[:20])
             if q == "day":
                 gem.exhausted(m)
             errs.append(f"{m.split('/')[-1]}: {('429(' + q + ') ') if q else ''}{str(e)[:60]}")

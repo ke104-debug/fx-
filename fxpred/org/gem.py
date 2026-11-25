@@ -21,6 +21,59 @@ JOBS = {"急変の原因": (8, 0), "統括補佐": (12, 1), "指標の結果": (
         "相談役": (10, 3), "反省": (2, 2), "反対意見": (16, 3), "週次の振り返り": (2, 3)}
 
 
+LEDGER = os.path.join(os.path.dirname(__file__), "..", "..", "journal", "gemini_usage.csv")
+DEFAULT_RPD = 20     # Google が上限を返す前の、1モデル1日の想定 (2026-11 に実際に返ってきた値)
+
+
+def record(job: str, model: str, outcome: str, code="", tokens=0):
+    """Gemini への呼び出しを1回ずつ台帳 (journal/gemini_usage.csv) に残す。
+    Google は残り回数を教えてくれないので、5分監視・毎時の分析のどちらから呼んでも、ここで数える (リポジトリに保存されるので両方で共有)"""
+    try:
+        now = pd.Timestamp.now(tz="UTC")
+        row = {"time_utc": f"{now:%Y-%m-%d %H:%M:%S}", "pt_day": _day(now), "job": job, "model": (model or "").split("/")[-1],
+               "outcome": outcome, "code": code, "tokens": int(tokens or 0)}
+        pd.DataFrame([row]).to_csv(LEDGER, mode="a", header=not os.path.exists(LEDGER), index=False)
+    except Exception:
+        pass
+
+
+def ledger_today() -> pd.DataFrame:
+    try:
+        d = pd.read_csv(LEDGER)
+        return d[d.pt_day.astype(str) == _day()]
+    except Exception:
+        return pd.DataFrame(columns=["job", "model", "outcome", "code", "tokens"])
+
+
+def model_limits() -> dict:
+    try:
+        return json.load(open(BUDGET)).get("model_rpd", {})
+    except Exception:
+        return {}
+
+
+def usage() -> dict:
+    """今日 (Google の1日の区切り = 米国太平洋時間) のモデル別の使用回数・上限・残り"""
+    d = ledger_today()
+    ok = d[d.outcome == "ok"]
+    lims = model_limits()
+    b = _load()
+    try:
+        names = [m.split("/")[-1] for m in json.load(open(BUDGET)).get("model_names", [])]
+    except Exception:
+        names = []
+    names = list(dict.fromkeys(names + list(ok.model.unique())))
+    ex = {m.split("/")[-1] for m in b.get("exhausted", [])}
+    per = {}
+    for m in names:
+        lim = int(lims.get(m, b.get("learned_rpd") or DEFAULT_RPD))
+        used = int((ok.model == m).sum())
+        per[m] = {"used": used, "limit": lim, "left": 0 if m in ex else max(lim - used, 0)}
+    return {"ok": len(ok), "fail": int((d.outcome != "ok").sum()), "tokens": int(d.tokens.sum()) if len(d) else 0,
+            "left": sum(v["left"] for v in per.values()), "limit": sum(v["limit"] for v in per.values()), "per": per,
+            "by_job": ok.job.value_counts().to_dict()}
+
+
 def _day(now=None):
     now = now or pd.Timestamp.now(tz="UTC")
     return f"{(now.tz_convert('America/Los_Angeles')):%Y-%m-%d}"
@@ -43,22 +96,13 @@ def _save(b):
 
 
 def limit() -> int:
-    """1日の上限。Google の無料枠はモデルごとに1日の回数が決まっている (2026-11 時点で1モデル20回) ので、
-    覚えた1モデルの上限 × 使えるモデルの数。分からない間は想定値"""
+    """1日の上限 = 使えるモデルごとの上限の合計 (Google が返した数字、無ければ1モデル20回)"""
     try:
-        b = json.load(open(BUDGET))
+        u = usage()
+        if u["per"]:
+            return u["limit"]
     except Exception:
-        b = {}
-    if b.get("learned_rpd"):
-        if b.get("models_day") != _day() and os.getenv("GEMINI_API_KEY"):
-            try:   # 使えるモデルの数を1日1回数える (モデル一覧の取得は無料枠の回数に入らない)
-                from . import llm
-                b = _load()
-                b["n_models"], b["models_day"] = len(llm._models()), _day()
-                _save(b)
-            except Exception:
-                pass
-        return int(b["learned_rpd"]) * max(1, int(b.get("n_models", 1)))
+        pass
     return DAILY_CAP
 
 
@@ -76,9 +120,11 @@ def exhausted(model: str):
     _save(b)
 
 
-def set_models(n: int):
+def set_models(n, names=None):
     b = _load()
     b["n_models"] = n
+    if names:
+        b["model_names"] = list(names)
     _save(b)
 
 
@@ -98,6 +144,10 @@ def allowed(job: str) -> bool:
         return False
     lim = limit()
     normal = int(lim * NORMAL_SHARE)
+    try:
+        b["count"] = max(b["count"], usage()["ok"])     # 台帳 (両方の監視で共有) の方が正確
+    except Exception:
+        pass
     if pri == 0 or (pri == 1 and b["by"].get(job, 0) < 4):
         return b["count"] < lim - 2          # 緊急 (急変の原因・指標の結果の最初の数回) は予備の分まで使える
     left = normal - b["count"]
@@ -121,7 +171,7 @@ def note(job: str, ok=True, quota=False, model=None, tokens=0):
     _save(b)
 
 
-def learn(err) -> str:
+def learn(err, model: str = "") -> str:
     """429 の返事の中身から上限の数字を読み取って覚える。
     戻り値: "day" (今日の枠を使い切った) / "minute" (1分あたりの上限。少し待てば使える) / "429" (種類不明) / "" (429 以外)"""
     try:
@@ -138,6 +188,9 @@ def learn(err) -> str:
                     kind = "day"
                     if val:
                         b["learned_rpd"] = int(val)
+                        m = str((v.get("quotaDimensions") or {}).get("model") or model).split("/")[-1]
+                        if m:
+                            b.setdefault("model_rpd", {})[m] = int(val)
                 elif "PerMinute" in qid:
                     kind = "minute" if kind != "day" else kind
                     if val:
@@ -150,14 +203,14 @@ def learn(err) -> str:
 
 
 def status() -> str:
+    """台帳から数えた今日の使用状況 (Google の1日の区切り = 日本時間 17時頃)"""
+    u = usage()
     b = _load()
-    lim = limit()
-    normal = int(lim * NORMAL_SHARE)
-    src = "Googleの上限" if b.get("learned_rpd") else "想定の上限"
-    return (f"Gemini 今日 {b['count']}回 / 普段の分 {normal}・緊急の予備 {lim - normal} ({src} {lim}回"
-            + (f" = 1モデル{b['learned_rpd']}回×{b.get('n_models', 1)}モデル" if b.get("learned_rpd") else "")
-            + f"、使い切ったモデル {len(b.get('exhausted', []))})・"
-            f"送った量 約{b.get('tokens', 0) // 1000}千トークン・失敗 {b.get('errors', 0)}回"
+    top = sorted(u["per"].items(), key=lambda kv: -kv[1]["used"])[:3]
+    per = " ".join(f"{m.replace('gemini-', '')} {v['used']}/{v['limit']}" for m, v in top if v["used"])
+    src = "Googleの上限" if (b.get("learned_rpd") or model_limits()) else "想定"
+    return (f"Gemini 今日 {u['ok']}回 (失敗 {u['fail']})・残り約{u['left']}/{u['limit']}回 ({src}・{len(u['per'])}モデル)"
+            + (f"・多い順 {per}" if per else "") + f"・約{u['tokens'] // 1000}千トークン"
             + (" (無料枠の上限に達したため停止中)" if b.get("blocked") else ""))
 
 
@@ -172,7 +225,7 @@ def call(job: str, prompt: str, as_json=True, temperature=0.2) -> dict | str | N
     b = _load()
     try:
         allm = llm._models()
-        set_models(len(allm))
+        set_models(len(allm), allm)
         cands = ([b["model"]] if b.get("model") in allm else []) + [m for m in allm if m != b.get("model")]
     except Exception:
         cands = [b["model"]] if b.get("model") else []
@@ -185,10 +238,13 @@ def call(job: str, prompt: str, as_json=True, temperature=0.2) -> dict | str | N
         try:
             out = llm._get(f"{llm.API}/{m}:generateContent", body)
             txt = out["candidates"][0]["content"]["parts"][0]["text"]
-            note(job, ok=True, model=m, tokens=out.get("usageMetadata", {}).get("totalTokenCount", 0))
+            tk = out.get("usageMetadata", {}).get("totalTokenCount", 0)
+            note(job, ok=True, model=m, tokens=tk)
+            record(job, m, "ok", tokens=tk)
             return json.loads(txt) if as_json else txt.strip()
         except Exception as e:
-            kind = learn(e)
+            kind = learn(e, m)
+            record(job, m, "fail", code=f"429{kind}" if kind else str(getattr(e, "code", "") or type(e).__name__)[:20])
             if kind:
                 quota_hits += 1
             if kind == "day":
