@@ -242,6 +242,11 @@ def quick_chance(trigger, price):
     reasons = [why] + [x for x in ok if not x.startswith(("相場状態", "価格帯"))]
     title, body = fmt.signal(side, price, stop, tgt, score, reasons, [x for x in ng] + stop_why,
                              f"{now.tz_convert(JST):%m/%d %H:%M} から最長48時間", serious)
+    if not serious:   # 統括補佐AI (Gemini・検証中)
+        from .org import aide
+        _ad = aide.check(side, price, stop, tgt, LABEL[key], reasons, list(ng) + stop_why, h)
+        if _ad:
+            body = body.replace("※AIの分析であり", _ad + "\n※AIの分析であり", 1)
     pos = None if serious else (side, price, stop, tgt, key)
     return title, body, (16776960 if serious else 5763719), pos
 
@@ -436,6 +441,12 @@ def run(dry=False):
             print(f"(チャンスと判断しないため送らない: 信頼度{score}{'、担当AIと逆向き' if agree < 0 else ''}) {LABEL[key]}")
             st.setdefault("sent", []).append(sig_id)
             continue
+        if not serious:   # 統括補佐AI (Gemini・検証中) の最終確認を1行添える。合図は止めない
+            from .org import aide
+            _ad = aide.check(s["side"], s["entry"], s["stop"], s.get("target") or s["entry"] + s["side"] * 2 * abs(s["entry"] - s["stop"]),
+                             LABEL[key], reasons, cautions, h)
+            if _ad:
+                body = body.replace("※AIの分析であり", _ad + "\n※AIの分析であり", 1)
         msgs.append(("wait" if serious else "ready", title, body))
         if not serious and not dry:
             from . import positions

@@ -32,6 +32,7 @@ jobs:
       - run: python -m fxpred.quick
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       - uses: actions/cache/save@v4
         if: always()
         with:
