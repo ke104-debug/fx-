@@ -476,6 +476,32 @@ def run(dry=False):
             print("指標の予想のエラー:", e)
     except Exception as e:
         print("AIの組織のエラー:", e)
+    try:   # 相場の状況の定期報告 (日本時間 12・15・18・21・24時): 合図が無くても「見ていて、こう判断している」を伝える
+        jn = pd.Timestamp.now(tz="UTC") + pd.Timedelta(hours=9)
+        slot = f"{jn:%Y-%m-%d}-{jn.hour}"
+        if jn.hour in (12, 15, 18, 21, 0) and jn.weekday() < 5 + (jn.hour == 0) and st.get("status_slot") != slot and not dry:
+            from .org import meeting as _mt
+            res_ = _mt.final(h)
+            c_ = h.Close
+            ev_ = []
+            try:
+                sg_ = pd.read_csv(SIGNALS)
+                sg_ = sg_[pd.to_datetime(sg_.time_utc, utc=True) >= pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=3)]
+                ev_ = [f"{r.strategy} {'買い' if r.side == 1 else '売り'} {'送った' if str(r.sent) == 'True' else '見送り (' + str(r.verdict) + ')'}"
+                       for r in sg_.itertuples()]
+            except Exception:
+                pass
+            active = [LABEL[k] for (k, rg_) in RULES if rg_ == state_now]
+            body_ = (f"USD/JPY {c_.iat[-1]:.2f} (3時間 {(c_.iat[-1] - c_.iat[-4]) * 100:+.0f}pips / 24時間 {(c_.iat[-1] - c_.iat[-25]) * 100:+.0f}pips)\n"
+                     f"相場の状態: {state_now} → 見張っている作戦: {' / '.join(active) or 'なし'}\n"
+                     f"全統括AI: {res_['conclusion']}\n方向の会議: {res_['verdict']} ({res_['overall']:+.2f}) / リスク: {res_['risk']['level']}"
+                     + "".join(f"\n・{w_}: {y_}" for w_, y_ in res_["risk"]["items"][:2])
+                     + "\n━━━━━━━━━━\n直近3時間の合図: " + (" / ".join(ev_) if ev_ else "なし (作戦の条件がそろわなかった)")
+                     + "\n保有中: " + __import__("fxpred.positions", fromlist=["x"]).summary())
+            msgs.append(("info", f"📋 相場の状況 ({jn:%H}時)", body_))
+            st["status_slot"] = slot
+    except Exception as e:
+        print("定期報告のエラー:", e)
     st["last_run"] = datetime.now(timezone.utc).isoformat(timespec="minutes")
     st["last_bar"] = f"{t:%Y-%m-%d %H:%M}"
     st["price"] = round(float(h.Close.iat[n]), 3)
