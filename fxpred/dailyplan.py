@@ -237,15 +237,15 @@ def morning_message(h: pd.DataFrame, a: dict, fc: dict, reviews: list[dict], lea
         lines.append(f"通算: 方向 {allr.hit_dir.mean():.0%}（{len(allr)}日）")
     try:   # AI の組織 (検証中): 全統括AIの結論・リスク管理部隊・Gemini のまとめ・監査AI
         from .org import meeting, auditor
-        res = meeting.final(h)
-        lines += ["━━━━━━━━━━", "AIの組織の会議 (検証中・参考)", f"・全統括AI: {res['conclusion']}",
-                  f"・リスク管理部隊: {res['risk']['level']}" + (f" ({res['risk']['items'][0][1]})" if res["risk"]["items"] else "")]
-        summ = [o["reason"] for o in res["ops"] if o["name"] == "AI情報|まとめ"]
+        org_res = meeting.final(h)
+        lines += ["━━━━━━━━━━", "AIの組織の会議 (検証中・参考)", f"・全統括AI: {org_res['conclusion']}",
+                  f"・リスク管理部隊: {org_res['risk']['level']}" + (f" ({org_res['risk']['items'][0][1]})" if org_res["risk"]["items"] else "")]
+        summ = [o["reason"] for o in org_res["ops"] if o["name"] == "AI情報|まとめ"]
         if summ:
             lines.append(f"・情報解析部隊 (AI): {summ[0]}")
-        found = auditor.audit(h, res=res)
+        found = auditor.audit(h, res=org_res)
         lines.append(f"・監査AI: {found[0]}")
-        lines += [f"・監査の補助: {x}" for x in auditor.ai_audit(found, res)[:2]]
+        lines += [f"・監査の補助: {x}" for x in auditor.ai_audit(found, org_res)[:2]]
         try:   # 相談役AI の最新の助言 (3時間に1回の記録から)
             og = pd.read_csv(os.path.join(J, "org.csv"))
             cols = [c for c in og.columns if c.startswith("AI相談役|")]
@@ -260,7 +260,7 @@ def morning_message(h: pd.DataFrame, a: dict, fc: dict, reviews: list[dict], lea
         from .org import gem
         ai = gem.call("朝の見立て", "ドル円の今日の見立てを、以下の会議の内容と指標の予定だけから日本語で3行 (各40字以内) で書く。"
                       "1行目: 今日の相場の見どころ、2行目: 気をつける時間と材料、3行目: 入るならどんな形か (入らない方がよければそう書く)。"
-                      "数字は会議にあるものだけ使う。JSON だけ: {\"lines\": [\"\", \"\", \"\"]}\n\n" + meeting.text(res)[:2500])
+                      "数字は会議にあるものだけ使う。JSON だけ: {\"lines\": [\"\", \"\", \"\"]}\n\n" + meeting.text(org_res)[:2500])
         if isinstance(ai, dict) and ai.get("lines"):
             lines += ["・AIの見立て (Gemini):"] + [f"　{str(x)[:60]}" for x in ai["lines"][:3]]
         lines.append(f"・{gem.status()}")
