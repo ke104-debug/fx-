@@ -159,6 +159,11 @@ def review(h: pd.DataFrame, days: int, monthly: bool) -> tuple[str, str]:
             lines += ["", "**夜の復習で何度も出た仮説 (直近4週間)**"] + [f"・{x}" for x in nightly.weekly_hypotheses()]
         except Exception as e:
             print("仮説のまとめのエラー:", e)
+        try:
+            from .org import readiness
+            lines += ["", "**自動売買への準備度**"] + [f"・{x}" for x in readiness.check(h)]
+        except Exception as e:
+            print("準備度のエラー:", e)
         lines += ["", "**監査AI (問題点)**"] + [f"・{x}" for x in _found + auditor.ai_audit(_found, _res)]
     except Exception as e:
         print("進言AIのエラー:", e)
