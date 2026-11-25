@@ -477,6 +477,14 @@ def run(dry=False):
         from .org import meeting
         res = meeting.log(h)
         print(f"(AIの組織) {res['verdict']} {res['overall']:+.2f}")
+        try:
+            from .org import groq as _gq
+            if os.getenv("GROQ_API_KEY") and not _gq._load().get("model"):
+                _ms = _gq.models()      # 接続の確認 (モデル一覧は無料枠の回数に入らない)
+                print(f"(補助AI) Groq 接続OK: 使えるモデル {len(_ms)}個 (先頭 {_ms[0] if _ms else '-'})")
+            print("(補助AI)", _gq.status())
+        except Exception:
+            pass
         try:   # 30〜90分後に重要指標があれば、予想と紙の上で試す作戦を1回だけ知らせる
             from . import eventsim
             fc = eventsim.forecast(h, res)

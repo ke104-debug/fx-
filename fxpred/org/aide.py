@@ -21,7 +21,7 @@ def check(side: int, entry: float, stop: float, target: float, strategy: str, re
         heads = "\n".join(f"- {(x['time'] + pd.Timedelta(hours=9)):%H:%M} {x['title']}" for x in sp.headlines(hours=6)[:20])
         now = pd.Timestamp.now(tz="UTC")
         ev = " / ".join(cal.fmt(e, False) for e in cal.upcoming(now, 24, impacts=("High",))[:3]) or "なし"
-        r = gem.call("統括補佐", "あなたは FX (ドル円) の売買判断チームの統括補佐。チームのルールが次の合図を出した。"
+        prompt = ("あなたは FX (ドル円) の売買判断チームの統括補佐。チームのルールが次の合図を出した。"
                      "ルールでは拾えない材料 (直近のニュース・指標の直前・介入の気配・急な材料) があるかを確かめ、"
                      "入ってよいか判断する。根拠は以下だけ。JSON だけ: "
                      '{"verdict": "入ってよい" か "慎重に" か "見送るべき", "reason": "40字以内"}\n\n'
@@ -29,14 +29,24 @@ def check(side: int, entry: float, stop: float, target: float, strategy: str, re
                      f"理由: {' / '.join(reasons[:4])}\n注意: {' / '.join(cautions[:4]) or 'なし'}\n"
                      f"【全統括AI】{res.get('conclusion', '')} / 方向の会議 {res.get('verdict', '')} {res.get('overall', 0):+.2f} / "
                      f"リスク {res.get('risk', {}).get('level', '')}\n【24時間以内の重要指標】{ev}\n【直近6時間の見出し】\n{heads}")
+        r = gem.call("統括補佐", prompt)
+        from . import groq
+        r2 = groq.call("統括補佐", prompt)      # もう一人の意見 (Groq)。一致・不一致ごとの成績も後で比べる
+        if not isinstance(r, dict) and isinstance(r2, dict):
+            r, r2 = r2, None
         if not isinstance(r, dict):
             return ""
         v, why = str(r.get("verdict", ""))[:10], str(r.get("reason", ""))[:60]
+        v2 = str(r2.get("verdict", ""))[:10] if isinstance(r2, dict) else ""
+        why2 = str(r2.get("reason", ""))[:40] if isinstance(r2, dict) else ""
         row = {"time_utc": f"{now:%Y-%m-%d %H:%M}", "strategy": strategy, "side": side, "entry": round(entry, 3),
-               "stop": round(stop, 3), "target": round(target, 3), "verdict": v, "reason": why}
+               "stop": round(stop, 3), "target": round(target, 3), "verdict": v, "reason": why, "verdict2": v2, "reason2": why2}
         os.makedirs(os.path.dirname(PATH), exist_ok=True)
         pd.DataFrame([row]).to_csv(PATH, mode="a", header=not os.path.exists(PATH), index=False)
-        return f"統括補佐AI (Gemini・検証中): {v} — {why}"
+        line = f"統括補佐AI (検証中): {v} — {why}"
+        if v2:
+            line += f"\n　もう一人 (Groq): {v2} — {why2}" + (" (意見が割れた)" if v2 != v else "")
+        return line
     except Exception as e:
         print("統括補佐AIのエラー:", e)
         return ""

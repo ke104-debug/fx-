@@ -271,14 +271,14 @@ def text(res: dict) -> str:
 
 def devil(res: dict) -> str:
     """Gemini に会議の結論への反対意見 (一番強い反論と、外れるならどんな時か) を出させる。監査AIの材料"""
-    from . import gem
-    r = gem.call("反対意見", "あなたは為替 (ドル円) の取引チームの監査役。以下の会議の結論に、遠慮なく一番強い反論をする。"
+    from . import groq
+    r, who = groq.ask("反対意見", "あなたは為替 (ドル円) の取引チームの監査役。以下の会議の結論に、遠慮なく一番強い反論をする。"
                  "根拠は会議の中身とニュースのまとめだけ。JSON だけを返す: "
                  '{"counter": "反論60字以内", "risk": "結論が外れるとしたらどんな時か40字以内", "strength": 0〜2 の整数 (反論の強さ)}\n\n'
                  + text(res)[:2500])
     if not isinstance(r, dict):
         return ""
-    return f"[{r.get('strength', '?')}] {str(r.get('counter', ''))[:80]} / 外れる時: {str(r.get('risk', ''))[:60]}"
+    return f"[{r.get('strength', '?')}] {str(r.get('counter', ''))[:80]} / 外れる時: {str(r.get('risk', ''))[:60]} ({who})"
 
 
 ADVISED = ("情報解析部隊", "相場分析部隊", "市場判断統括", "リスク統括")
@@ -286,8 +286,8 @@ ADVISED = ("情報解析部隊", "相場分析部隊", "市場判断統括", "�
 
 def consult(res: dict) -> dict:
     """相談役AI (Gemini 無料枠): 各部隊・統括の結論に、見落とし・弱い根拠・確かめるべきことを1つずつ助言させる (1回の呼び出しでまとめて)"""
-    from . import gem
-    r = gem.call("相談役", "あなたは FX (ドル円) の売買判断チームの各部隊の相談役。以下の会議の中身を読み、部隊ごとに"
+    from . import groq
+    r, _who = groq.ask("相談役", "あなたは FX (ドル円) の売買判断チームの各部隊の相談役。以下の会議の中身を読み、部隊ごとに"
                  "「結論の弱いところ・見落とし・次に確かめるべきこと」を1つ、各50字以内で助言する。根拠は会議の中身だけ。"
                  "JSON だけ: {" + ", ".join(f'"{u}": ""' for u in ADVISED) + "}\n\n" + text(res)[:2800])
     return {u: str(r.get(u, ""))[:80] for u in ADVISED} if isinstance(r, dict) else {}

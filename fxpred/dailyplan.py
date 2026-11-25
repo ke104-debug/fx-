@@ -269,6 +269,11 @@ def morning_message(h: pd.DataFrame, a: dict, fc: dict, reviews: list[dict], lea
         if isinstance(ai, dict) and ai.get("lines"):
             lines += ["・AIの見立て (Gemini):"] + [f"　{str(x)[:60]}" for x in ai["lines"][:3]]
         lines.append(f"・{gem.status()}")
+        try:
+            from .org import groq
+            lines.append(f"・{groq.status()}")
+        except Exception:
+            pass
     except Exception as e:
         print("AIの組織のエラー:", e)
     try:
