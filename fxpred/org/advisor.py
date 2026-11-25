@@ -27,8 +27,11 @@ def live_scores(min_rows=48) -> pd.DataFrame:
         return pd.DataFrame()
     d["time_utc"] = pd.to_datetime(d.time_utc, utc=True)
     d = d.set_index("time_utc").sort_index()
-    fut = d.price.shift(-24)          # 1時間1行なので24行先 ≒ 24時間後
-    r = (fut - d.price) * 100        # pips
+    # 24時間後の価格 (記録の間隔が1時間でも30分でも使えるよう、時刻で探す)
+    px = d.price
+    fut = pd.Series(px.reindex(px.index + pd.Timedelta(hours=24), method="nearest", tolerance=pd.Timedelta(minutes=45)).values,
+                    index=px.index)
+    r = (fut - px) * 100        # pips
     rows = []
     skip = {"price", "overall", "verdict", "caution", "risk", "conclusion"}
     for c in d.columns:

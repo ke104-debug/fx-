@@ -17,8 +17,8 @@ import pandas as pd
 API = "https://api.groq.com/openai/v1"
 BUDGET = os.getenv("FX_GROQ_BUDGET", "state/groq_budget.json")
 UNTIL = pd.Timestamp("2026-12-25", tz="UTC")
-JOBS = {"統括補佐": 12, "反対意見": 16, "相談役": 26, "監査の補助": 4, "検証の補助": 2, "調査": 320}
-DAY_CAP = 500   # 利用者の指示: 1日1,000回の無料枠のうち500回までは使ってよい
+JOBS = {"統括補佐": 12, "反対意見": 16, "相談役": 50, "監査の補助": 4, "検証の補助": 2, "調査": 450}
+DAY_CAP = 800   # 利用者の指示: 無料枠 (1日1,000回) を大いに使ってよい。2割は予備に残す
 
 
 def _day():

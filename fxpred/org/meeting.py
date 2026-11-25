@@ -340,15 +340,17 @@ def log(h: pd.DataFrame) -> dict:
     """影の運用: 会議の結果を journal/org.csv に1時間1行で残す (通知はしない)"""
     res = final(h)
     ops = res["ops"]
-    key = f"{h.index[-1] + pd.Timedelta(hours=1):%Y-%m-%d %H:%M}"
+    # 30分ごとに1行 (毎時の分析は1時間に2回動く)。価格は最新の1分足に近い値を使う
+    _now = pd.Timestamp.now(tz="UTC")
+    key = f"{_now.floor('30min'):%Y-%m-%d %H:%M}"
     if os.path.exists(LOG) and key in set(pd.read_csv(LOG, usecols=["time_utc"]).time_utc):
-        return res      # この時間はもう記録済み (同じ時間に2回目の実行)。AI を呼ばずに終わる (無料枠の節約)
+        return res      # この30分はもう記録済み。AI を呼ばずに終わる (無料枠の節約)
     row = {"time_utc": key, "price": round(float(h.Close.iat[-1]), 3),
            "overall": res["overall"], "verdict": res["verdict"], "caution": res["caution"],
            "risk": res["risk"]["level"], "conclusion": res["conclusion"], "conflict": res["market"]["conflict"], "secs": res["secs"],
-           "AI反対意見": devil(res) if (h.index[-1].hour % 2 == 0) else "",
+           "AI反対意見": devil(res) if (_now.hour % 2 == 0 and _now.minute < 30) else "",
            # 相談役: Groq の枠があれば毎時、無ければ Gemini で6時間に1回 (反対意見と重ならない 3・9・15・21時)
-           **(consult(res) if (_groq_ok("相談役") or h.index[-1].hour % 6 == 3) else {}),
+           **(consult(res) if (_groq_ok("相談役") or (_now.hour % 6 == 3 and _now.minute < 30)) else {}),
            "監査": "; ".join(__import__("fxpred.org.auditor", fromlist=["x"]).meeting_check(res))[:200],
            "介入けん制の段階": max([int(o.get("stage", 0)) for o in ops if "stage" in o] or [0]),
            **{o["name"]: round(o["bias"], 3) for o in ops}}

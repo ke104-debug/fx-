@@ -1,7 +1,7 @@
 """調査班 (Groq 無料枠): ほかの担当 (相談役) が「調べてほしい」と頼んだことと、毎時の定番の調べものを、
 Google ニュースの見出しから集めて Groq に読ませ、要点・ドル円への影響・確かさをまとめる。
 Groq は自分でネットを見ないので、集めるのはこのプログラム (無料の RSS)。結果は journal/research.csv と、次の会議の中身に入る。
-回数: 定番 5件 + 依頼 最大8件 / 時 (1日 約300回まで)。Groq の1日の合計は 500回まで (groq.DAY_CAP)。判断の重みは0 (記録して採点)"""
+回数: 30分ごと: 定番 5件 (1時間に1回) + 依頼 最大6件 (1日 約400回まで)。Groq の1日の合計は 800回まで (groq.DAY_CAP)。判断の重みは0 (記録して採点)"""
 import json
 import os
 
@@ -11,7 +11,7 @@ ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 PATH = os.path.join(ROOT, "journal", "research.csv")
 QUEUE = os.getenv("FX_RESEARCH_QUEUE", "state/research_queue.json")
 STANDING = ["ドル円 介入 OR 財務官", "FRB 高官 発言", "日銀 総裁 OR 審議委員 発言", "米国債 利回り", "円相場 要因"]
-PER_HOUR = 8
+PER_HOUR = 6        # 30分ごとの依頼の上限 (定番は1時間に1回)
 
 
 def request(unit: str, queries: list[str]):
@@ -35,18 +35,19 @@ def run(now=None) -> list[dict]:
     from .. import specialists as sp
     now = now or pd.Timestamp.now(tz="UTC")
     mark = QUEUE + ".last"
-    try:   # 毎時の分析は1時間に2回動くので、調査は1時間に1回だけ
-        if open(mark).read().strip() == f"{now:%Y-%m-%d %H}":
+    slot = f"{now.floor('30min'):%Y-%m-%d %H:%M}"
+    try:   # 30分に1回だけ (毎時の分析は1時間に2回動く)
+        if open(mark).read().strip() == slot:
             return []
     except Exception:
         pass
     os.makedirs(os.path.dirname(mark) or ".", exist_ok=True)
-    open(mark, "w").write(f"{now:%Y-%m-%d %H}")
+    open(mark, "w").write(slot)
     try:
         q = json.load(open(QUEUE))
     except Exception:
         q = []
-    todo = [{"unit": "定番", "q": s} for s in STANDING] + q[:PER_HOUR]
+    todo = ([{"unit": "定番", "q": s} for s in STANDING] if now.minute < 30 else []) + q[:PER_HOUR]
     rest = q[PER_HOUR:]
     rows = []
     for t in todo:
