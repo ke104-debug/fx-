@@ -281,16 +281,45 @@ def devil(res: dict) -> str:
     return f"[{r.get('strength', '?')}] {str(r.get('counter', ''))[:80]} / 外れる時: {str(r.get('risk', ''))[:60]} ({who})"
 
 
-ADVISED = ("情報解析部隊", "相場分析部隊", "市場判断統括", "リスク統括")
+ADVISED = ("作戦部隊", "情報解析部隊", "相場分析部隊", "市場判断統括", "リスク統括", "決済・ポジション管理部隊")
+VIEW_UNITS = ("情報解析部隊", "相場分析部隊")    # 向きの見立ても出させて、後で当たりを採点する
 
 
-def consult(res: dict) -> dict:
-    """相談役AI (Gemini 無料枠): 各部隊・統括の結論に、見落とし・弱い根拠・確かめるべきことを1つずつ助言させる (1回の呼び出しでまとめて)"""
+def consult(res: dict, every_hour=False) -> dict:
+    """相談役AI (全部隊の補佐): 部隊ごとに「結論の弱いところ・見落とし・次に確かめること」を1つ助言。
+    情報解析部隊と相場分析部隊の相談役は、自分の見立て (-1〜+1) も出す (記録して採点。判断には使わない)。
+    Groq の無料枠がある時は毎時、無い時は Gemini で6時間に1回。1回の呼び出しで全部隊分"""
     from . import groq
-    r, _who = groq.ask("相談役", "あなたは FX (ドル円) の売買判断チームの各部隊の相談役。以下の会議の中身を読み、部隊ごとに"
-                 "「結論の弱いところ・見落とし・次に確かめるべきこと」を1つ、各50字以内で助言する。根拠は会議の中身だけ。"
-                 "JSON だけ: {" + ", ".join(f'"{u}": ""' for u in ADVISED) + "}\n\n" + text(res)[:2800])
-    return {u: str(r.get(u, ""))[:80] for u in ADVISED} if isinstance(r, dict) else {}
+    from .. import positions
+    keys = ", ".join(f'"{u}": {{"助言": ""' + (', "見立て": 0' if u in VIEW_UNITS else "") + "}" for u in ADVISED)
+    r, who = groq.ask("相談役", "あなたは FX (ドル円) の売買判断チームの各部隊の相談役 (部隊ごとに1人ずつ)。以下の会議の中身を読み、"
+                      "部隊ごとに「結論の弱いところ・見落とし・次に確かめるべきこと」を1つ、各50字以内で助言する。"
+                      "情報解析部隊と相場分析部隊の相談役は、この後24時間のドル円の見立てを -1 (下げ)〜+1 (上げ) で付ける (分からなければ0)。"
+                      "根拠は会議の中身と保有中だけ。JSON だけ: {" + keys + "}\n\n"
+                      + text(res)[:2800] + f"\n【保有中】{positions.summary()}")
+    if not isinstance(r, dict):
+        return {}
+    out = {}
+    for u in ADVISED:
+        v = r.get(u, {})
+        if isinstance(v, str):
+            v = {"助言": v}
+        out[f"AI相談役|{u}"] = str(v.get("助言", ""))[:80]
+        if u in VIEW_UNITS:
+            try:
+                out[f"AI相談役見立て|{u}"] = max(-1.0, min(1.0, float(v.get("見立て", 0))))
+            except Exception:
+                pass
+    out["AI相談役の担当"] = who
+    return out
+
+
+def _groq_ok(job):
+    try:
+        from . import groq
+        return groq.allowed(job)
+    except Exception:
+        return False
 
 
 def log(h: pd.DataFrame) -> dict:
@@ -301,8 +330,8 @@ def log(h: pd.DataFrame) -> dict:
            "overall": res["overall"], "verdict": res["verdict"], "caution": res["caution"],
            "risk": res["risk"]["level"], "conclusion": res["conclusion"], "conflict": res["market"]["conflict"], "secs": res["secs"],
            "AI反対意見": devil(res) if (h.index[-1].hour % 2 == 0) else "",
-           # 相談役は反対意見 (偶数の時) と同じ回に重ならないよう、3・9・15・21時 (UTC の足) に。1分あたりの上限を避ける
-           **({f"AI相談役|{u}": v for u, v in consult(res).items()} if (h.index[-1].hour % 6 == 3) else {}),
+           # 相談役: Groq の枠があれば毎時、無ければ Gemini で6時間に1回 (反対意見と重ならない 3・9・15・21時)
+           **(consult(res) if (_groq_ok("相談役") or h.index[-1].hour % 6 == 3) else {}),
            "監査": "; ".join(__import__("fxpred.org.auditor", fromlist=["x"]).meeting_check(res))[:200],
            "介入けん制の段階": max([int(o.get("stage", 0)) for o in ops if "stage" in o] or [0]),
            **{o["name"]: round(o["bias"], 3) for o in ops}}

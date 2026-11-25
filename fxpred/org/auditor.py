@@ -149,7 +149,8 @@ def ai_audit(findings: list[str], res: dict | None) -> list[str]:
                 "以下の「監査AIの指摘」に無い問題を、会議の中身から最大3つ、各50字以内で。根拠の無い推測はしない。"
                 '問題が無ければ空の配列。JSON だけ: {"issues": ["", ""]}\n\n【監査AIの指摘】\n'
                 + "\n".join(findings[:8]) + "\n\n【会議の中身】\n" + (text(res)[:2500] if res else "なし"))
-        r = gem.call("監査の補助", body)
+        from . import groq
+        r, _who = groq.ask("監査の補助", body)
         if isinstance(r, dict):
             return [f"(AI) {str(x)[:70]}" for x in r.get("issues", [])[:3] if str(x).strip()]
     except Exception as e:

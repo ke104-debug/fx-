@@ -140,6 +140,18 @@ def review(h: pd.DataFrame, days: int, monthly: bool) -> tuple[str, str]:
             print("週次の改善案のエラー:", e)
         _res = _meeting_safe(h)
         _found = auditor.audit(h, res=_res)
+        try:   # 検証部隊の補助 (Groq): 提案の一覧を読み、過去への合わせ込みの危険が高いものを指摘
+            from .org import groq, proposals
+            pr = proposals.load()
+            pr = pr[pr.status.isin(["提案", "候補"])].tail(15)
+            if len(pr):
+                r, who = groq.ask("検証の補助", "FX の売買ルールの提案の一覧。過去への合わせ込み (たまたまの結果を拾っている) の危険が高いものと、"
+                                  "確かめ方が足りないものを最大3つ、各50字以内で指摘する。JSON だけ: {\"issues\": [\"\"]}\n\n"
+                                  + "\n".join(f"{x.id} {x.title} / 結果: {x.holdout} / 状態: {x.status}" for x in pr.itertuples()))
+                if isinstance(r, dict) and r.get("issues"):
+                    lines += ["", f"**検証部隊の補助 ({who})**"] + [f"・{str(x)[:80]}" for x in r["issues"][:3]]
+        except Exception as e:
+            print("検証の補助のエラー:", e)
         lines += ["", "**監査AI (問題点)**"] + [f"・{x}" for x in _found + auditor.ai_audit(_found, _res)]
     except Exception as e:
         print("進言AIのエラー:", e)

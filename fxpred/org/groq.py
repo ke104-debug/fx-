@@ -6,7 +6,7 @@
 - Groq は返事のヘッダーに「今日の残りの回数・上限」を返すので、それを覚えて、残りが2割を切ったら呼ばない。仕事ごとにも1日の上限
 - 「使いすぎ (429)」が返ったら、そのモデルはその日使わない
 送るのは公開ニュースの見出し・会議のまとめ・合図の中身だけ (利用者の個人の情報や取引は送らない)。
-仕事: 統括補佐AIのもう一人の意見 / 反対意見・相談役 (Gemini の代わりに。Groq が使えない時は Gemini)"""
+仕事: 統括補佐AIのもう一人の意見 / 反対意見 / 全部隊の相談役 (毎時) / 監査の補助 / 検証部隊の補助 (週次)。Groq が使えない時は Gemini"""
 import json
 import os
 import urllib.error
@@ -17,7 +17,7 @@ import pandas as pd
 API = "https://api.groq.com/openai/v1"
 BUDGET = os.getenv("FX_GROQ_BUDGET", "state/groq_budget.json")
 UNTIL = pd.Timestamp("2026-12-25", tz="UTC")
-JOBS = {"統括補佐": 12, "反対意見": 16, "相談役": 6, "監査の補助": 4}
+JOBS = {"統括補佐": 12, "反対意見": 16, "相談役": 26, "監査の補助": 4, "検証の補助": 2}
 
 
 def _day():
