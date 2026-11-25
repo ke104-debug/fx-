@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.13", cache: pip }
-      - run: pip install -r requirements.txt
+      - run: pip install -r requirements.txt numba   # 検証の計算を速くする (監視には不要なので別に入れる)
       - name: 23年分の1分足 (data-m1 ブランチ) を取り出す
         run: |
           git fetch -q --depth 1 origin data-m1
