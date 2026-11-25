@@ -31,8 +31,18 @@ def _load():
     except Exception:
         b = {}
     if b.get("day") != _day():
-        b = {"day": _day(), "count": 0, "by": {}, "errors": 0, "exhausted": [], "model": b.get("model"), "limits": {}}
+        b = {"day": _day(), "count": 0, "by": {}, "errors": 0, "exhausted": {}, "model": b.get("model"), "limits": {}}
+    if not isinstance(b.get("exhausted"), dict):      # 以前の形式 (1分の上限でも1日止めていた) は捨てる
+        b["exhausted"] = {}
     return b
+
+
+def _resting(b) -> set:
+    import time as _t
+    return {m for m, until in b.get("exhausted", {}).items() if until > _t.time()}
+
+
+BULK = ("調査", "5分監視", "仮説のまとめ")    # 回数の多い仕事は速くて枠の大きい小さなモデルを先に
 
 
 def _save(b):
@@ -93,7 +103,12 @@ def call(job: str, prompt: str, as_json=True) -> dict | str | None:
     except Exception as e:
         print("Groq のモデル一覧を取れませんでした:", str(e)[:100])
         ms = [b["model"]] if b.get("model") else []
-    ms = [m for m in ([b["model"]] if b.get("model") in ms else []) + ms if m not in b.get("exhausted", [])]
+    if job in BULK:
+        small = [m for m in ms if any(k in m.lower() for k in ("instant", "8b", "mini", "small", "scout"))]
+        ms = small + [m for m in ms if m not in small]
+    else:
+        ms = ([b["model"]] if b.get("model") in ms else []) + ms
+    ms = [m for m in ms if m not in _resting(b)]
     errs = []
     for m in list(dict.fromkeys(ms))[:3]:
         body = {"model": m, "temperature": 0.2, "messages": [{"role": "user", "content": prompt}]}
@@ -105,7 +120,8 @@ def call(job: str, prompt: str, as_json=True) -> dict | str | None:
             b = _load()
             b["count"] += 1
             b["by"][job] = b["by"].get(job, 0) + 1
-            b["model"] = m
+            if job not in BULK:
+                b["model"] = m
             try:   # 返事のヘッダーから、今日の残りの回数と上限を覚える
                 b.setdefault("limits", {})[m] = {"limit": int(hd.get("x-ratelimit-limit-requests") or hd.get("X-Ratelimit-Limit-Requests")),
                                                  "remaining": int(hd.get("x-ratelimit-remaining-requests") or hd.get("X-Ratelimit-Remaining-Requests"))}
@@ -115,9 +131,17 @@ def call(job: str, prompt: str, as_json=True) -> dict | str | None:
             return json.loads(txt) if as_json else txt.strip()
         except urllib.error.HTTPError as e:
             if e.code == 429:
+                # 1日の回数を使い切った時だけその日は休む。1分あたりの量の上限なら、言われた秒数 (または2分) だけ休む
+                import time as _t
+                left = e.headers.get("x-ratelimit-remaining-requests")
+                retry = e.headers.get("retry-after")
+                daily = left is not None and str(left).strip() == "0"
+                wait = 24 * 3600 if daily else min(float(retry) if retry else 120, 900)
                 b = _load()
-                b.setdefault("exhausted", []).append(m)
+                b["exhausted"][m] = _t.time() + wait
                 _save(b)
+                errs.append(f"{m}: 429 ({'1日の上限' if daily else f'{wait:.0f}秒休む'})")
+                continue
             errs.append(f"{m}: {e.code}")
         except Exception as e:
             errs.append(f"{m}: {str(e)[:60]}")

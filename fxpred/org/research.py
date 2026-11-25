@@ -53,6 +53,8 @@ def run(now=None) -> list[dict]:
     for t in todo:
         if not groq.allowed("調査"):
             break
+        import time as _t
+        _t.sleep(2)     # 1分あたりの量の上限に当たらないよう少し間をあける
         heads = sp.headlines(query=t["q"], hours=24)[:15]
         if not heads:
             continue
