@@ -121,6 +121,11 @@ def run(force_train=False):
         except Exception as e:
             print("モデルを作り直せませんでした:", e)
     lines = summary()
+    try:
+        from .org import eurwatch
+        lines += eurwatch.score()
+    except Exception as e:
+        print("ユーロの答え合わせのエラー:", e)
     os.makedirs(os.path.dirname(REPORT), exist_ok=True)
     open(REPORT, "w").write(f"# 夜の検証部屋 ({now:%Y-%m-%d %H:%M} 日本時間)\n\n" + "\n".join(f"- {x}" for x in lines) + "\n")
     print("\n".join(lines))

@@ -492,6 +492,12 @@ def run(dry=False):
                 print(f"(調査班) {len(_rr)}件: " + " / ".join(f"{x['query']}→{x['summary'][:25]}" for x in _rr[:3]))
         except Exception as e:
             print("調査班のエラー:", e)
+        try:   # ユーロドル・ユーロ円の見張り (軽い・厳しめ・記録だけ。通知しない)
+            from .org import eurwatch as _ew
+            for _x in _ew.run(dry=dry):
+                print(f"(ユーロの影の運用) {_x['rule']} {_x['side']} {_x['price']}")
+        except Exception as e:
+            print("ユーロの見張りのエラー:", e)
         try:   # 30〜90分後に重要指標があれば、予想と紙の上で試す作戦を1回だけ知らせる
             from . import eventsim
             fc = eventsim.forecast(h, res)

@@ -241,6 +241,8 @@ def morning_message(h: pd.DataFrame, a: dict, fc: dict, reviews: list[dict], lea
         try:
             from .org import memory
             lines += memory.crowd_line().split("\n")
+            from .org import eurwatch
+            lines += eurwatch.line().split("\n")
         except Exception as e:
             print("投機筋の持ち高のエラー:", e)
     except Exception:
