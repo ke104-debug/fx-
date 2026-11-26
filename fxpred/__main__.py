@@ -51,7 +51,7 @@ def main(argv):  # noqa: C901
         quick.run(dry="--dry" in args)
     elif cmd == "auto":
         # GitHub Actions から毎時実行: 日本時間8時台の最初の1回だけ朝の予想・振り返り、2時台に夜の復習、その後に監視
-        import os, json, pandas as pd
+        import os, pandas as pd
         from . import scan, dailyplan
         now = pd.Timestamp.now(tz="Asia/Tokyo")
         path = os.getenv("FX_SCAN_STATE", "state/scan.json")

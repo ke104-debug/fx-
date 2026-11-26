@@ -29,7 +29,7 @@ def update_cftc() -> int:
         raw = urllib.request.urlopen(urllib.request.Request(url, headers=ua), timeout=60).read()
         z = zipfile.ZipFile(io.BytesIO(raw))
         d = pd.read_csv(z.open(z.namelist()[0]), low_memory=False)
-        return d[d[name_col].str.contains("JAPANESE YEN", na=False)]
+        return d[d[name_col].astype(str).str.strip().str.startswith("JAPANESE YEN -")]   # ユーロ円の先物 (EURO FX/JAPANESE YEN) は除く
     d = get(f"https://www.cftc.gov/files/dea/history/deacot{y}.zip", "Market and Exchange Names")
     dc = [c for c in d.columns if "As of Date in Form YYYY-MM-DD" in c][0]
     new = pd.DataFrame({"date": pd.to_datetime(d[dc]), "spec_long": d["Noncommercial Positions-Long (All)"],
@@ -40,7 +40,7 @@ def update_cftc() -> int:
         tff = pd.DataFrame({"date": pd.to_datetime(x["Report_Date_as_YYYY-MM-DD"]), "lev_long": x["Lev_Money_Positions_Long_All"],
                             "lev_short": x["Lev_Money_Positions_Short_All"], "am_long": x["Asset_Mgr_Positions_Long_All"],
                             "am_short": x["Asset_Mgr_Positions_Short_All"]})
-        new = new.merge(tff.drop_duplicates("date"), on="date", how="left")
+        new = new.drop_duplicates("date").merge(tff.drop_duplicates("date"), on="date", how="left")
     except Exception as e:
         print("CFTC (金融先物の分類) を取れませんでした:", e)
     old = pd.read_csv(CFTC, parse_dates=["date"])
