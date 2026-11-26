@@ -160,6 +160,12 @@ def review(h: pd.DataFrame, days: int, monthly: bool) -> tuple[str, str]:
         except Exception as e:
             print("仮説のまとめのエラー:", e)
         try:
+            from .org import memory
+            n_cf = memory.update_cftc()
+            lines += ["", "**投機筋の持ち高 (CFTC)**", f"・{memory.crowd_line().replace(chr(10), chr(10) + '・')}" + (f" (今週 {n_cf}週分を追加)" if n_cf else "")]
+        except Exception as e:
+            print("CFTC のエラー:", e)
+        try:
             from . import nightlab
             lines += ["", "**夜の検証部屋**"] + [f"・{x.strip()}" for x in nightlab.summary()]
         except Exception as e:

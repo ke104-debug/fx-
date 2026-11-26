@@ -238,6 +238,11 @@ def morning_message(h: pd.DataFrame, a: dict, fc: dict, reviews: list[dict], lea
     try:   # ドル・円の強さ
         from .org import strength
         lines += ["━━━━━━━━━━"] + strength.line().split("\n")
+        try:
+            from .org import memory
+            lines += memory.crowd_line().split("\n")
+        except Exception as e:
+            print("投機筋の持ち高のエラー:", e)
     except Exception:
         pass
     try:   # 昨夜の復習 (夜2時台に AI と一緒に細かく反省したもの) から2行。無ければ簡単な反省

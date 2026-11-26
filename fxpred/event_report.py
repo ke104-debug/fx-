@@ -164,4 +164,12 @@ def shock_followup(bars, now: int, st: dict):
             f"今 {c:.3f} (同じ向きに {cont:+.0f}pips) / その後の高値 {hi:.3f} 安値 {lo:.3f}\n"
             + ("→ 動きが続いている" if cont > 5 else "→ 戻している" if cont < -5 else "→ 止まっている")
             + f"\n━━━━━━━━━━\n{heads}\n全統括AI: {_org()}" + _strength())
+    if any("介入" in x["title"] for x in hs[-8:]):     # 介入らしい時は、過去の介入のその後を添える (参考)
+        try:
+            from .org import memory
+            past = memory.similar_events("介入 (円売り)" if up else "介入 (円買い)")
+            if past:
+                body += "\n━━━━━━━━━━\n" + "\n".join(past[:6])
+        except Exception:
+            pass
     return ("📣 急変の15分後", body, 9807270)
