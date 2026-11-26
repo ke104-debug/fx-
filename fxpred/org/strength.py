@@ -59,21 +59,43 @@ def word(z: float) -> str:
     return "強い" if z >= 1 else "やや強い" if z >= 0.5 else "弱い" if z <= -1 else "やや弱い" if z <= -0.5 else "ふつう"
 
 
+def fetch5(period="30d") -> pd.DataFrame | None:
+    """Yahoo の5分足 (EUR/USD・EUR/JPY・USD/JPY)。直近30日"""
+    try:
+        import yfinance as yf
+        d = yf.download(["EURUSD=X", "EURJPY=X", "USDJPY=X"], period=period, interval="5m", progress=False, auto_adjust=False)["Close"]
+        d.index = pd.to_datetime(d.index, utc=True)
+        return d.rename(columns={"EURUSD=X": "eu", "EURJPY=X": "ej", "USDJPY=X": "uj"}).dropna()
+    except Exception:
+        return None
+
+
 def line(uj_close=None) -> str:
-    """レポート用の1行: ドルの強さ・円の強さ (4時間・24時間、普段の何倍か) と、今の動きがどちら主導か"""
-    x = fetch("10d")
-    if x is None or len(x) < 30:
-        return "ドル・円の強さ: 取得できず"
-    out = []
-    for n in (4, 24):
+    """レポート用: ドルの強さ・円の強さ (1時間・4時間・24時間、普段の何倍か) と、ドル円の動きのうちドル要因・円要因の pips。
+    ドル円 = ユーロ円 ÷ ユーロドル なので、ドル円の動き (対数) = ドルの強さ − 円の強さ にぴったり分けられる。
+    普段の大きさは、直近30日の同じ長さの動きのばらつき。5分足が取れない時は1時間足 (10日) で"""
+    x = fetch5()
+    if x is not None and len(x) > 2000:
+        per = {"1時間": 12, "4時間": 48, "24時間": 288}
+    else:
+        x = fetch("10d")
+        if x is None or len(x) < 30:
+            return "ドル・円の強さ: 取得できず"
+        per = {"4時間": 4, "24時間": 24}
+    out = {}
+    for k, n in per.items():
         lr_u, lr_j = -np.log(x.eu).diff(n), -np.log(x.ej).diff(n)
-        # 普段の大きさ (直近10日の同じ長さの動きのばらつき) で割る
-        zu, zj = lr_u.iat[-1] / (lr_u.std() or 1e-9), lr_j.iat[-1] / (lr_j.std() or 1e-9)
-        out.append((n, zu, zj))
-    (_, u4, j4), (_, u24, j24) = out
-    lead = []
-    if abs(u4) >= 0.5 or abs(j4) >= 0.5:
-        lead.append("ドル" + ("高" if u4 > 0 else "安") if abs(u4) >= abs(j4) else "円" + ("高" if j4 > 0 else "安"))
-    return (f"ドルの強さ: 4時間 {u4:+.1f} ({word(u4)}) / 24時間 {u24:+.1f} ({word(u24)})\n"
-            f"円の強さ: 4時間 {j4:+.1f} ({word(j4)}) / 24時間 {j24:+.1f} ({word(j24)})"
-            + (f"\n→ 直近4時間は{lead[0]}が主導" if lead else "\n→ 直近4時間はどちらも目立たない"))
+        out[k] = (lr_u.iat[-1], lr_j.iat[-1], lr_u.iat[-1] / (lr_u.std() or 1e-9), lr_j.iat[-1] / (lr_j.std() or 1e-9))
+    px = float(x.uj.iat[-1]) if "uj" in x else 155.0
+    fmt = lambda i: " / ".join(f"{k} {v[i]:+.1f} ({word(v[i])})" for k, v in out.items())
+    lines = [f"ドルの強さ: {fmt(2)}", f"円の強さ: {fmt(3)}"]
+    k4 = "4時間"
+    lu, lj, zu, zj = out[k4]
+    du, dj = lu * px * 100, -lj * px * 100          # ドル円の pips のうち、ドルが動かした分・円が動かした分
+    lines.append(f"ドル円の直近4時間 {du + dj:+.0f}pips = ドル要因 {du:+.0f} + 円要因 {dj:+.0f}")
+    if abs(zu) >= 0.5 or abs(zj) >= 0.5:
+        lead = ("ドル" + ("高" if zu > 0 else "安")) if abs(zu) >= abs(zj) else ("円" + ("高" if zj > 0 else "安"))
+        lines.append(f"→ 直近4時間は{lead}が主導")
+    else:
+        lines.append("→ 直近4時間はどちらも目立たない")
+    return "\n".join(lines)
