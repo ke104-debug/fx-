@@ -9,15 +9,17 @@ import pandas as pd
 DIR = os.path.join(os.path.dirname(__file__), "..", "data", "m1")
 
 
-def load(years=None) -> pd.DataFrame:
+def load(years=None, pair="USDJPY") -> pd.DataFrame:
     parts = []
-    for f in sorted(glob.glob(os.path.join(DIR, "USDJPY_*.npz"))):
+    for f in sorted(glob.glob(os.path.join(DIR, f"{pair}_*.npz"))):
         y = int(os.path.basename(f)[7:11])
         if years and y not in years:
             continue
         z = np.load(f)
         parts.append(pd.DataFrame({"Open": z["o"], "High": z["h"], "Low": z["l"], "Close": z["c"]},
                                   index=pd.to_datetime(z["t"], unit="s", utc=True)))
+    if not parts:
+        return pd.DataFrame(columns=["Open", "High", "Low", "Close"])
     d = pd.concat(parts).astype(np.float64)
     d = d[~d.index.duplicated()].sort_index()
     flat = (d.High == d.Low) & (d.Open == d.Close) & (d.Close == d.Close.shift())

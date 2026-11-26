@@ -12,6 +12,7 @@ on:
         default: false
 permissions:
   contents: write
+  actions: write    # データ取得の順番待ちから、次の取得を始めるため
 concurrency:
   group: fx-lab
   cancel-in-progress: false
@@ -31,11 +32,15 @@ jobs:
           ls data/m1 | wc -l
       - name: 検証
         run: python -m fxpred.nightlab ${{ inputs.train && '--train' || '' }}
+      - name: データ取得・検証の順番待ち (取得が動いていなければ次を始める)
+        run: python tools/data_queue.py || echo "順番待ちの処理に失敗 (次の晩にもう一度)"
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: 記録をリポジトリに保存
         run: |
           git config user.name "ai-fx-bot"
           git config user.email "ai-fx-bot@users.noreply.github.com"
-          for f in journal/m15_shadow.csv journal/eur_shadow.csv reports/nightlab.md models; do [ -e "$f" ] && git add "$f"; done
+          for f in journal/m15_shadow.csv journal/eur_shadow.csv reports/nightlab.md models config/data_queue.json; do [ -e "$f" ] && git add "$f"; done
           if ! git diff --cached --quiet; then
             git commit -m "夜の検証部屋 $(date -u +%Y-%m-%dT%H:%MZ)"
             for i in 1 2 3; do

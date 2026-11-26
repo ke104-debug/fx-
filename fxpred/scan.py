@@ -494,7 +494,8 @@ def run(dry=False):
             print("調査班のエラー:", e)
         try:   # ユーロドル・ユーロ円の見張り (軽い・厳しめ・記録だけ。通知しない)
             from .org import eurwatch as _ew
-            for _x in _ew.run(dry=dry):
+            _on = json.load(open(os.path.join(os.path.dirname(__file__), "..", "config", "pairs.json"))).get("eur", True)
+            for _x in (_ew.run(dry=dry) if _on else []):
                 print(f"(ユーロの影の運用) {_x['rule']} {_x['side']} {_x['price']}")
         except Exception as e:
             print("ユーロの見張りのエラー:", e)

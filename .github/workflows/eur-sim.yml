@@ -1,0 +1,49 @@
+name: ユーロドル・ユーロ円の検証
+# ユーロのペアでシステムが利益を出せるかを、裏で検証する (通知はしない)。公開リポジトリのため Actions は無料。AI は使わない。
+# 毎週日曜 (市場が閉まっている時間) と、データの取得が終わった時 (順番待ちから) に動く。監視とは別の組
+on:
+  schedule:
+    - cron: "41 3 * * 0"     # 日曜 12:41 (日本時間)
+  workflow_dispatch:
+    inputs:
+      fakes:
+        description: "偽物の相場を何回作って比べるか"
+        default: "10"
+permissions:
+  contents: write
+concurrency:
+  group: eur-sim
+  cancel-in-progress: false
+jobs:
+  sim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13", cache: pip }
+      - run: pip install -r requirements.txt numba
+      - name: データを取り出す (1分足 3ペア・1時間足)
+        run: |
+          mkdir -p data/pairs
+          for b in data-m1 data-m1-EURUSD data-m1-EURJPY; do
+            git fetch -q --depth 1 origin $b 2>/dev/null && git archive FETCH_HEAD m1 | tar -x -C data || echo "$b はまだ無い"
+          done
+          for b in data-pairs data-duka; do
+            git fetch -q --depth 1 origin $b && git archive FETCH_HEAD data | tar -x -C data/pairs
+          done
+          ls data/m1 | sed 's/_.*//' | sort | uniq -c
+      - name: 検証
+        run: python -m fxpred.eursim ${{ inputs.fakes || '10' }}
+      - name: 結果を保存
+        run: |
+          git config user.name "ai-fx-bot"
+          git config user.email "ai-fx-bot@users.noreply.github.com"
+          git add reports/eur_sim.md journal/eur_sim.csv
+          if ! git diff --cached --quiet; then
+            git commit -m "ユーロのペアの検証 $(date -u +%Y-%m-%dT%H:%MZ)"
+            for i in 1 2 3; do
+              git pull --rebase -q && git push -q && break
+              git rebase --abort 2>/dev/null; sleep 10
+            done
+          fi

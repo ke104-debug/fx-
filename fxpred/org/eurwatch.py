@@ -20,6 +20,10 @@ LOG = os.path.join(ROOT, "journal", "eur_shadow.csv")
 RULES = {   # 名前: (ペア, 種類, 倍率)
     "ユーロドル 3つの並び24時間": ("EURUSD", "並び", 2.0),
     "ユーロドル 急変に付いていく": ("EURUSD", "急変", 4.0),
+    # ドル円の急変の作戦と同じ形 (5σ) をそのまま当てはめたもの。探して選んだのではないので偶然の心配が小さい (reports/eur_sim.md)
+    # 1時間足 23年: ユーロ円 作る +0.51R / 確かめ +0.47R (7つの時代すべてプラス、年8回)、ユーロドル 作る +0.24 / 確かめ +0.11 (いくつかの決済の平均)
+    "ユーロ円 急変に付いていく5σ": ("EURJPY", "急変", 5.0),
+    "ユーロドル 急変に付いていく5σ": ("EURUSD", "急変", 5.0),
 }
 
 
@@ -61,10 +65,12 @@ def signals(x: pd.DataFrame) -> pd.DataFrame:
     up = (e >= k) & (u <= -k) & (e > j) & (j > u)
     dn = (e <= -k) & (u >= k) & (e < j) & (j < u)
     out["ユーロドル 3つの並び24時間"] = np.where(act & up, 1, np.where(act & dn, -1, 0))
-    r3 = np.log(x["EURUSD"].Close).diff(3)
-    z3 = r3 / r3.rolling(2000, min_periods=500).std()
-    k = RULES["ユーロドル 急変に付いていく"][2]
-    out["ユーロドル 急変に付いていく"] = np.where(act & (z3 >= k), 1, np.where(act & (z3 <= -k), -1, 0))
+    for name, (pair, kind, k) in RULES.items():
+        if kind != "急変":
+            continue
+        r3 = np.log(x[pair].Close).diff(3)
+        z3 = r3 / r3.rolling(2000, min_periods=500).std()
+        out[name] = np.where(act & (z3 >= k), 1, np.where(act & (z3 <= -k), -1, 0))
     return out
 
 
@@ -75,7 +81,6 @@ def run(dry=False) -> list[dict]:
         return []
     x = x.iloc[:-1]                              # まだ確定していない最新の足は使わない
     sg = signals(x)
-    atr = _atr(x["EURUSD"])
     t = x.index[-1]
     old = pd.read_csv(LOG) if os.path.exists(LOG) else pd.DataFrame(columns=["time_utc", "rule"])
     rows = []
@@ -86,9 +91,12 @@ def run(dry=False) -> list[dict]:
         recent = old[(old.rule == rule) & (pd.to_datetime(old.time_utc, utc=True) > t - pd.Timedelta(hours=6))]
         if len(recent):
             continue
-        c, a = float(x["EURUSD"].Close.iat[-1]), float(atr.iat[-1])
-        rows.append({"time_utc": f"{t:%Y-%m-%d %H:%M}", "rule": rule, "side": "買い" if s == 1 else "売り", "price": round(c, 5),
-                     "stop": round(c - s * 1.5 * a, 5), "target": round(c + s * 3.0 * a, 5), "result_r": ""})
+        pair = RULES[rule][0]
+        c, a = float(x[pair].Close.iat[-1]), float(_atr(x[pair]).iat[-1])
+        stop_k, tgt_k = (1.0, 0.0) if RULES[rule][1] == "急変" and RULES[rule][2] >= 5 else (1.5, 3.0)
+        rows.append({"time_utc": f"{t:%Y-%m-%d %H:%M}", "rule": rule, "pair": pair, "side": "買い" if s == 1 else "売り", "price": round(c, 5),
+                     "stop": round(c - s * stop_k * a, 5), "target": round(c + s * tgt_k * a, 5) if tgt_k else "",
+                     "atr": round(a, 5), "result_r": ""})
     if rows and not dry:
         os.makedirs(os.path.dirname(LOG), exist_ok=True)
         pd.concat([old, pd.DataFrame(rows)]).to_csv(LOG, index=False)
@@ -96,35 +104,53 @@ def run(dry=False) -> list[dict]:
 
 
 def score() -> list[str]:
-    """夜の検証部屋: 答えの出た記録を採点 (損切り・利確・48時間)"""
+    """夜の検証部屋: 答えの出た記録を採点。損1.5:利3 (48時間) / 5σの急変は 損1・1R進んだら建値・その後2ATRで追う (72時間)"""
     if not os.path.exists(LOG):
-        return ["ユーロドルの影の運用: まだ合図なし (年に十数回の見込み)"]
+        return ["ユーロのペアの影の運用: まだ合図なし (年に数回〜十数回の見込み)"]
     d = pd.read_csv(LOG)
+    if "pair" not in d:
+        d["pair"] = "EURUSD"
+    d["pair"] = d.pair.fillna("EURUSD")
     x = fetch("60d")
     if x is not None:
-        p = x["EURUSD"]
         for i, r in d[d.result_r.isna() | (d.result_r.astype(str) == "")].iterrows():
+            p = x[r.pair]
+            cost = 0.00005 if r.pair == "EURUSD" else 0.010
             t = pd.Timestamp(r.time_utc, tz="UTC")
             after = p[p.index > t]
             if after.empty:
                 continue
             s = 1 if r.side == "買い" else -1
             e = after.Open.iat[0]
-            risk = abs(r.price - r.stop)
-            res = None
+            stop = float(r.stop)
+            risk = abs(r.price - stop)
+            tgt = float(r.target) if str(r.target) not in ("", "nan") else None
+            a = float(r.atr) if "atr" in d and str(r.atr) not in ("", "nan") else risk
+            hold = 48 if tgt else 72
+            if len(after) < hold:
+                continue
+            best, res = e, None
             for k, (h, lo) in enumerate(zip(after.High, after.Low)):
-                if (s == 1 and lo <= r.stop) or (s == -1 and h >= r.stop):
-                    res = (s * (r.stop - e) - 0.00005) / risk; break
-                if (s == 1 and h >= r.target) or (s == -1 and lo <= r.target):
-                    res = (s * (r.target - e) - 0.00005) / risk; break
-                if k >= 47:
-                    res = (s * (after.Close.iat[k] - e) - 0.00005) / risk; break
+                if (s == 1 and lo <= stop) or (s == -1 and h >= stop):
+                    res = (s * (stop - e) - cost) / risk; break
+                if tgt and ((s == 1 and h >= tgt) or (s == -1 and lo <= tgt)):
+                    res = (s * (tgt - e) - cost) / risk; break
+                if not tgt:
+                    best = max(best, h) if s == 1 else min(best, lo)
+                    if s * (best - e) >= risk:
+                        ts = best - s * 2 * a
+                        stop = max(stop, e, ts) if s == 1 else min(stop, e, ts)
+                if k >= hold - 1:
+                    res = (s * (after.Close.iat[k] - e) - cost) / risk; break
             if res is not None:
                 d.loc[i, "result_r"] = round(res, 3)
         d.to_csv(LOG, index=False)
-    done = pd.to_numeric(d.result_r, errors="coerce").dropna()
-    return [f"ユーロドルの影の運用 (通知なし): 合図 {len(d)}回、答えが出た {len(done)}回 平均 {done.mean() if len(done) else 0:+.2f}R"
-            + " (23年の検証: 3つの並び 確かめ +0.53R・年8回。偶然と区別できないので記録で確かめる)"]
+    out = []
+    for rule, g in d.groupby("rule"):
+        done = pd.to_numeric(g.result_r, errors="coerce").dropna()
+        out.append(f"{rule} (影の運用・通知なし): 合図 {len(g)}回、答えが出た {len(done)}回"
+                   + (f" 平均 {done.mean():+.2f}R 合計 {done.sum():+.1f}R" if len(done) else ""))
+    return out
 
 
 def line(x: pd.DataFrame | None = None) -> str:
