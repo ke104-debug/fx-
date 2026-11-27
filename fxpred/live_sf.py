@@ -68,7 +68,7 @@ def check(st: dict, now_epoch: int, price: float):
         scan.log_signal(now.floor("min"), "SF", s, 0, "見送り(動いた後)", sent=False, conditions="遅れ")
         print(f"(急変に付いていく) 確定から {abs(price - s['entry']) * 100:.0f}pips 動いたので見送り")
         return None
-    blk, notes = signal_audit.gate(s["side"])
+    blk, notes = signal_audit.gate(s["side"], key="SF")
     cb, ct = signal_audit.cost_gate(price, s["stop"])
     notes = [ct] + notes
     if cb:

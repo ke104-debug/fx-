@@ -85,7 +85,10 @@ def audit_notes(hours=1.5) -> list[str]:
     return [x.strip() for x in str(o["監査"].iat[-1]).split(";") if x.strip()]
 
 
-def gate(side: int) -> tuple[bool, list[str]]:
+SHOCK_KEYS = ("SF", "S")     # 荒れた動きに乗る作戦。値動きの荒さ・指標の前後を理由には止めない (利用者の指摘 K002)
+
+
+def gate(side: int, key: str | None = None) -> tuple[bool, list[str]]:
     """合図を送る前の最終関門。(止める?, 通知に書く注意)。
     - 点検部隊が売買の判断に関わる問題を見つけたまま → 止める
     - 監査AIの指摘 → 通知の注意に必ず書く。『1人の意見でほぼ決まっている』会議の向きと逆の合図は注意を強める"""
@@ -98,7 +101,12 @@ def gate(side: int) -> tuple[bool, list[str]]:
         b = pd.read_csv(os.path.join(os.path.dirname(__file__), "..", "journal", "boss.csv")).iloc[-1]
         if pd.Timestamp(b.time_utc, tz="UTC") >= pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=1.5):
             if b.boss == "停止":
-                return True, [f"ボスAIが停止中: {b.overrides}"]
+                # 急変の作戦は、止めた理由がリスク統括の『警戒』(値動きの荒さ・指標の前後) だけなら止めない。
+                # 23年: 急変に付いていくの合図のうち値動きが普段の2.5倍以上の時 (26%) も +0.13R (作る +0.08 / 確かめ +0.19)
+                only_wild = str(b.overrides).strip() == "リスク統括が警戒" and _risk_only_wild()
+                if not (key in SHOCK_KEYS and only_wild):
+                    return True, [f"ボスAIが停止中: {b.overrides}"]
+                return False, ["ボスAI: 停止中 (値動き・指標の警戒) だが、急変の作戦は例外として送る。滑りに注意"] + notes
             if int(b.direction) == -side:
                 notes = ["ボスAIの見立てと逆向き (検証済みの作戦なので送るが、慎重に)"] + notes
             else:
@@ -120,3 +128,14 @@ def cost_gate(entry: float, stop: float) -> tuple[bool, str]:
         print("指標の時刻を確かめられませんでした:", e)
     verdict, txt = costs.check(entry, stop, event_near=near)
     return verdict == "見送り", txt
+
+
+def _risk_only_wild() -> bool:
+    """直近のボスAIの記録で、リスクの理由が値動き異常・指標警戒・週末/時間帯だけか (介入警戒・連敗などが入っていれば False)"""
+    import os
+    try:
+        b = pd.read_csv(os.path.join(os.path.dirname(__file__), "..", "journal", "boss.csv")).iloc[-1]
+        names = [x for x in str(b.get("risk_names", "")).split("|") if x and x != "nan"]
+        return bool(names) and all(x in ("値動き異常", "指標警戒", "週末・時間帯") for x in names)
+    except Exception:
+        return False

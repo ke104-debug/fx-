@@ -512,7 +512,7 @@ def run(dry=False):
             continue
         try:   # 最終関門: 点検部隊の問題があれば止める。監査AIの指摘は注意に必ず書く
             from . import signal_audit as _sa
-            _blk, _notes = _sa.gate(s["side"])
+            _blk, _notes = _sa.gate(s["side"], key=key)
             _cb, _ct = _sa.cost_gate(s["entry"], s["stop"])
             _notes = [_ct] + _notes
             if _cb:

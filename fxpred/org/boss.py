@@ -91,7 +91,8 @@ def review(res: dict, h: pd.DataFrame) -> dict:
         concl = f"様子見 (全統括AIの『{res.get('verdict')}』を取り消し: {overrides[-1][:60]})"
     else:
         concl = res.get("conclusion", "")
-    out = {"verdict": verdict, "direction": direction, "word": word, "overrides": overrides, "reasons": reasons,
+    risk_names = sorted({who for who, _ in res.get("risk", {}).get("items", [])})
+    out = {"risk_names": risk_names, "verdict": verdict, "direction": direction, "word": word, "overrides": overrides, "reasons": reasons,
            "record": rec, "trend": tv_txt, "conclusion": concl}
     return out
 
@@ -107,7 +108,7 @@ def line(b: dict) -> str:
 def log(b: dict, res: dict):
     row = {"time_utc": f"{pd.Timestamp.now(tz='UTC').floor('30min'):%Y-%m-%d %H:%M}", "supervisor": res.get("verdict", ""),
            "supervisor_overall": round(float(res.get("overall", 0)), 3), "boss": b["verdict"], "direction": b["direction"],
-           "overrides": " / ".join(b["overrides"])[:300], "record_hit": b["record"].get("hit"), "record_n": b["record"].get("n")}
+           "overrides": " / ".join(b["overrides"])[:300], "risk_names": "|".join(b.get("risk_names", [])), "record_hit": b["record"].get("hit"), "record_n": b["record"].get("n")}
     old = pd.read_csv(LOG) if os.path.exists(LOG) else pd.DataFrame()
     if len(old) and (old.time_utc == row["time_utc"]).any():
         return
