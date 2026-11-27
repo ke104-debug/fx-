@@ -22,7 +22,16 @@ JST = "Asia/Tokyo"
 
 # (作戦, 相場状態) -> 1回のリスク (資金に対する損失上限)。最大下落20%以内を目安に抑えた設定
 RULES = {("S", "荒れ"): 0.04, ("H4", "通常"): 0.015, ("H5", "通常"): 0.01, ("H3", "通常"): 0.01, ("H3", "トレンド"): 0.015}
-LABEL = {"S": "急変の反動 (流れの方向)", "H3": "東京レンジのロンドン抜け", "H4": "レンジ逆張り (流れの方向)", "H5": "指標発表直後の順張り"}
+LABEL = {"S": "急変の反動 (流れの方向)", "H3": "東京レンジのロンドン抜け", "H4": "レンジ逆張り (流れの方向)", "H5": "指標発表直後の順張り",
+         "SF": "急変に付いていく (流れの方向)"}
+
+
+def notify_keys() -> set:
+    """通知する作戦 (config/live.json)。読めなければ一番根拠のある2つだけ"""
+    try:
+        return set(json.load(open(os.path.join(os.path.dirname(__file__), "..", "config", "live.json")))["notify"])
+    except Exception:
+        return {"SF", "S"}
 RR_KEYS, RR_SEND = ("H4",), 3.0   # 損小利大の形 (利確が損切りの3倍以上) のレンジ逆張り
 # 2026-11-25 外部レビューと遅れの再検証で根拠が崩れた (23年 +0.07R は偶然の範囲、1分足のある取引では -0.06R) → 通知はやめて記録だけ
 RR_NOTIFY = False
@@ -58,7 +67,7 @@ def rr_guard(h: pd.DataFrame, last=40, need=10) -> tuple[bool, str]:
     tot = sum(rs)
     return tot >= 0, f"(この形の直近{len(rs)}回の合計 {tot:+.1f}R)"
 EXIT_TEXT = {"eod": "届かなければ当日 日本時間朝5時に手仕舞い", "24h": "届かなければ24時間後に手仕舞い", None: "損切りか利確まで保有 (最長48時間)"}
-EXIT_VALID = {"H3": "当日 朝5時まで", "H4": "最長48時間", "H5": "24時間", "S": "最長72時間"}
+EXIT_VALID = {"H3": "当日 朝5時まで", "H4": "最長48時間", "H5": "24時間", "S": "最長72時間", "SF": "24時間"}
 RULE_FN = {"H3": pf.h_tokyo_break, "H4": pf.h_range_trend, "H5": pf.h_event_momo}
 
 
@@ -233,6 +242,11 @@ def quick_chance(trigger, price):
     score = edge.confidence(ok, agree, len(stop_why), learn.get("cond_weights"))
     send_at = learn.get("send_at_quick", edge.SEND_AT_QUICK)
     key = "S" if kind == "rebound" else "H4"
+    if key not in notify_keys():   # 根拠の弱い作戦は記録だけ
+        log_signal(now.floor("min"), key, {"side": side, "entry": price, "stop": stop, "target": tgt}, 0, "記録のみ",
+                   sent=False, conditions="記録のみ")
+        print(f"(記録のみ) {LABEL[key]} {'買い' if side == 1 else '売り'} {price:.3f}")
+        return None
     from . import signal_audit
     _ok, _why = signal_audit.rule_ok(key, side, h)
     if not _ok:
@@ -361,6 +375,11 @@ def run(dry=False):
     for key, s in sigs:
         sig_id = f"{key}-{t:%Y%m%d%H}"
         if sig_id in st.get("sent", []):
+            continue
+        if key not in notify_keys():   # 根拠の弱い作戦は記録だけ (2026-11-27 利用者の承認)
+            log_signal(t, key, s, 0, "記録のみ", sent=False, conditions="記録のみ")
+            st.setdefault("sent", []).append(sig_id)
+            print(f"(記録のみ) {LABEL[key]} {'買い' if s['side'] == 1 else '売り'} {s['entry']:.3f}")
             continue
         if not is_awake and key not in URGENT:
             print(f"(時間外のため送らない) {LABEL[key]}")

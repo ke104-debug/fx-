@@ -58,13 +58,7 @@ jobs:
         run: |
           git config user.name "ai-fx-bot"
           git config user.email "ai-fx-bot@users.noreply.github.com"
-          git add journal config/org_weights.json config/cftc_jpy.csv reports/inspector.md
-          if ! git diff --cached --quiet; then
-            git commit -m "記録を更新 $(date -u +%Y-%m-%dT%H:%MZ)"
-            # 自分の取引の登録などと同時に書き込んで競合したら、今回の記録はあきらめて最新に合わせる (次の回で記録し直す)
-            git pull --rebase -q || { git rebase --abort; git reset -q --hard origin/main; echo "記録の競合のため今回は保存を見送り"; exit 0; }
-            git push -q || echo "保存に失敗 (次の回で記録し直す)"
-          fi
+          bash tools/save.sh "記録を更新 $(date -u +%Y-%m-%dT%H:%MZ)" journal config/org_weights.json config/cftc_jpy.csv reports/inspector.md
       - name: 失敗したら Discord に知らせる
         if: failure()
         run: |

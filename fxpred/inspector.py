@@ -119,7 +119,7 @@ def c_live_strength(h):
     """通知している作戦の23年の根拠 (2016年以降 +0.02R 以下なら、根拠が弱いと知らせ続ける)"""
     from . import scan
     st = json.load(open(J("config", "strategy_stats.json")))["stats"]
-    live = sorted({k for k, _ in scan.RULES})
+    live = sorted(scan.notify_keys())
     weak = [f"{k} ({scan.LABEL.get(k, k)}: 23年 {st[k]['R']:+.3f}R / 2016年以降 {st[k]['R16']:+.3f}R)"
             for k in live if k in st and st[k]["R16"] <= 0.02]
     return not weak, ("根拠の弱い作戦を通知中: " + " / ".join(weak)) if weak else "通知している作戦はどれも検証で根拠あり"

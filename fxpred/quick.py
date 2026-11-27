@@ -255,6 +255,15 @@ def run(dry=False):
                     st.pop("pending_rebound", None)
         except Exception as e:  # 詳しい分析に失敗しても、簡易監視は止めない
             print("AI分析エラー:", e)
+    try:   # 通知する作戦「急変に付いていく」: 毎時の足の確定直後に確かめる (遅れるほど不利なので5分監視で)
+        from . import live_sf
+        m_ = live_sf.check(st, now, c)
+        if m_:
+            out.append(m_[:3])
+            if not dry:
+                positions.add(*m_[3], t_epoch=now)
+    except Exception as e:
+        print("急変に付いていくのエラー:", e)
     if not dry:   # 重要指標の前後15分と急変の15分後のレポート (利用者の要望)
         try:
             from . import event_report as er
