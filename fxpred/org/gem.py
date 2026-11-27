@@ -246,6 +246,7 @@ def call(job: str, prompt: str, as_json=True, temperature=0.2) -> dict | str | N
         note(job, ok=False, quota=True)
         return None
     quota_hits, errs = 0, []
+    busy_n = 0
     for m in cands[:3]:
         try:
             out = llm._get(f"{llm.API}/{m}:generateContent", body)
@@ -261,8 +262,11 @@ def call(job: str, prompt: str, as_json=True, temperature=0.2) -> dict | str | N
             if code == 404:
                 exhausted(m)          # 一覧に出ても使えないモデル → その日は使わない
             if code in (500, 502, 503, 504) or "timed out" in str(e):
-                errs.append(f"{m.split('/')[-1]}: {code or 'timeout'} (Google が混雑。他のモデルも試さずにやめる)")
-                break                 # 混雑の時に次々とモデルを試すと、無駄な呼び出しが増えるだけ
+                errs.append(f"{m.split('/')[-1]}: {code or 'timeout'} (混雑)")
+                busy_n += 1
+                if busy_n >= 2:
+                    break             # 2つのモデルが続けて混雑なら、その回はやめる (M016: 以前は1つ目でやめて、ほとんど読めていなかった)
+                continue
             if kind:
                 quota_hits += 1
             if kind == "day":

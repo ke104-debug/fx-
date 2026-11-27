@@ -164,9 +164,26 @@ def c_roles(h):
     return not bad, " / ".join(bad) or "判断に使う部品はすべて根拠のある役割"
 
 
+def c_news(h):
+    """ニュースの読み取りが動いているか (M016: 2日間ほぼ0回だったのに気づかなかった)。直近24時間の成功の割合"""
+    if not _market_open():
+        return True, "週末のため確認しない"
+    try:
+        g = pd.read_csv(J("journal", "gemini_usage.csv"))
+        g = g[(g.job == "ニュース") & (pd.to_datetime(g.time_utc, utc=True) >= _now() - pd.Timedelta(hours=24))]
+    except Exception as e:
+        return False, f"記録を読めない ({str(e)[:40]})"
+    ok = int((g.outcome == "ok").sum())
+    if len(g) >= 4 and ok / len(g) < 0.5:
+        return False, f"ニュースの読み取りが24時間で {ok}/{len(g)}回しか成功していない (Gemini の混雑など)"
+    if ok == 0:
+        return False, "ニュースの読み取りが24時間で1回も成功していない"
+    return True, f"ニュースの読み取り: 24時間で {ok}/{len(g)}回成功"
+
+
 LIGHT = {"合図と作戦の条件": c_signal_rules, "損切り・利確の向き": c_signal_geometry, "見張り中の取引": c_positions,
          "記録の新しさ": c_freshness, "影の運用の記録": c_shadow_alive, "通知している作戦の根拠": c_live_strength,
-         "記録ファイルの形": c_csv_shape, "部品の役割": c_roles}
+         "記録ファイルの形": c_csv_shape, "部品の役割": c_roles, "ニュースの読み取り": c_news}
 
 
 # ---------------------------------------------------------------- 毎晩だけ (GitHub のログ・AI)

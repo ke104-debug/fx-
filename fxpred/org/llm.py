@@ -24,7 +24,7 @@ QUERIES = ["ドル円", "日銀 金融政策", "FRB 利下げ OR 利上げ", "�
 API = "https://generativelanguage.googleapis.com/v1beta"
 
 
-def _get(url, body=None, timeout=60):
+def _get(url, body=None, timeout=40):
     # キーは URL ではなくヘッダーで送る (エラー表示や記録にキーが残らないように)
     req = urllib.request.Request(url, data=json.dumps(body).encode() if body else None,
                                  headers={"Content-Type": "application/json", "x-goog-api-key": os.environ["GEMINI_API_KEY"]})
@@ -104,7 +104,9 @@ def ask(price: float, now=None) -> dict | None:
         print("Gemini のモデル一覧を取れませんでした:", str(e)[:120])
         cands = [st["model"]] if st.get("model") else []
     cands = gem.usable(cands)
-    for m in cands[:4]:              # 無料枠が無い・使い切ったモデルは次の候補へ (1回の実行で4つまで)
+    busy = st.get("busy", {})
+    cands = [m for m in cands if time.time() - busy.get(m, 0) > 3600] + [m for m in cands if time.time() - busy.get(m, 0) <= 3600]   # 1時間以内に混雑したモデルは後回し
+    for m in cands[:3]:              # 無料枠が無い・使い切った・混雑したモデルは次の候補へ (1回の実行で3つまで)
         try:
             out = _get(f"{API}/{m}:generateContent", body)
             txt = out["candidates"][0]["content"]["parts"][0]["text"]
@@ -120,11 +122,23 @@ def ask(price: float, now=None) -> dict | None:
             if code == 404:
                 gem.exhausted(m)
             if code in (500, 502, 503, 504) or "timed out" in str(e):
+                # 2026-11-27 修正 (M016): 以前は混雑したらすぐやめていて、11/25〜26 は63回中0回しか読めていなかった。
+                # 混雑はモデルごとなので次のモデルを試す (このモデルは今回の候補から外す)
                 errs.append(f"{m.split('/')[-1]}: {code or 'timeout'}")
-                break
+                busy = st.setdefault("busy", {}); busy[m] = time.time()
+                continue
             if q == "day":
                 gem.exhausted(m)
             errs.append(f"{m.split('/')[-1]}: {('429(' + q + ') ') if q else ''}{str(e)[:60]}")
+    if res is None:   # Gemini が使えない時は Groq で同じ読み取りをする (M016: ニュースの見張りが止まらないように)
+        try:
+            from . import groq
+            r2 = groq.call("ニュースの読み取り", prompt)
+            if isinstance(r2, dict) and r2.get("roles"):
+                res, model = r2, "groq"
+                gem.record("ニュース", "groq (予備)", "ok")
+        except Exception as e:
+            errs.append(f"Groq: {str(e)[:40]}")
     gem.note("ニュース", ok=res is not None, model=model, tokens=tokens,
              quota=res is None and not gem.usable(cands))
     if res is None:
