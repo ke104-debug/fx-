@@ -189,7 +189,7 @@ def run(dry=False):
         out.append(wk); st["weekend_warned"] = time.strftime("%Y-%m-%d", time.gmtime(now))
     # 0) 5分監視の補佐 (Groq): 今の状況・30分後の見立て・注意を記録 (急変の通知にも添える)。判断は変えない
     qa = None
-    if not dry:
+    if not dry and not __import__("fxpred.org.mode", fromlist=["x"]).paused("5分監視の見立て"):
         try:
             from .org import quick_ai
             qa = quick_ai.read(bars, lv, st)

@@ -69,6 +69,9 @@ def review(res: dict, h: pd.DataFrame) -> dict:
         direction = 0; overrides.append("方向が大きな流れと逆で、1時間・4時間・日足もそろって流れの側 (" + " / ".join(tv_txt) + ")")
     # B5: 全統括AIの成績
     rec = supervisor_record()
+    from . import mode
+    if mode.simple() and direction:
+        direction = 0; overrides.append("方向の会議は休止中 (統廃合後は採点だけ。向きは出さない)")
     if direction and rec["n"] >= 20 and rec["hit"] is not None and rec["hit"] < 0.5:
         direction = 0; overrides.append(f"全統括AIの直近4週間の向きの当たりが {rec['hit']:.0%} ({rec['n']}回) で5割未満")
     # 合図
@@ -82,6 +85,8 @@ def review(res: dict, h: pd.DataFrame) -> dict:
         verdict = "修正"        # 全統括AIの結論を覆した
     if verdict == "停止":
         concl = "新しく入らない (" + " / ".join(overrides)[:80] + ")"
+    elif mode.simple():
+        concl = ("作戦の合図あり (" + str(res.get("market", {}).get("text", ""))[:50] + ")") if sig is not None else "様子見 (検証済みの作戦の合図なし)"
     elif overrides and res.get("verdict") in ("買い寄り", "売り寄り") and direction == 0:
         concl = f"様子見 (全統括AIの『{res.get('verdict')}』を取り消し: {overrides[-1][:60]})"
     else:

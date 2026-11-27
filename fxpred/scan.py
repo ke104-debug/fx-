@@ -278,7 +278,7 @@ def quick_chance(trigger, price):
         return None
     title, body = fmt.signal(side, price, stop, tgt, score, reasons, [x for x in ng] + stop_why + _notes[:3],
                              f"{now.tz_convert(JST):%m/%d %H:%M} から最長48時間", serious)
-    if not serious:   # 統括補佐AI (Gemini・検証中)
+    if not serious and not __import__("fxpred.org.mode", fromlist=["x"]).paused("統括補佐"):   # 統括補佐AI (Gemini・検証中)
         from .org import aide
         _ad = aide.check(side, price, stop, tgt, LABEL[key], reasons, list(ng) + stop_why, h)
         if _ad:
@@ -512,7 +512,7 @@ def run(dry=False):
                 body = body.replace("━━━━━━━━━━", "━━━━━━━━━━\n" + "\n".join("⚠️ " + x for x in _notes[:3]), 1)
         except Exception as e:
             print("最終関門のエラー:", e)
-        if not serious:   # 統括補佐AI (Gemini・検証中) の最終確認を1行添える。合図は止めない
+        if not serious and not __import__("fxpred.org.mode", fromlist=["x"]).paused("統括補佐"):   # 統括補佐AI (Gemini・検証中) の最終確認を1行添える。合図は止めない
             from .org import aide
             _ad = aide.check(s["side"], s["entry"], s["stop"], s.get("target") or s["entry"] + s["side"] * 2 * abs(s["entry"] - s["stop"]),
                              LABEL[key], reasons, cautions, h)
@@ -598,7 +598,9 @@ def run(dry=False):
             active = [LABEL[k] for (k, rg_) in RULES if rg_ == state_now]
             body_ = (f"USD/JPY {c_.iat[-1]:.2f} (3時間 {(c_.iat[-1] - c_.iat[-4]) * 100:+.0f}pips / 24時間 {(c_.iat[-1] - c_.iat[-25]) * 100:+.0f}pips)\n"
                      f"相場の状態: {state_now} → 見張っている作戦: {' / '.join(active) or 'なし'}\n"
-                     f"全統括AI: {res_['conclusion']}\n方向の会議: {res_['verdict']} ({res_['overall']:+.2f}) / リスク: {res_['risk']['level']}"
+                     + (f"結論 (ボスAI): {res_['conclusion']}\nリスク管理部: {res_['risk']['level']}"
+                        if __import__("fxpred.org.mode", fromlist=["x"]).simple() else
+                        f"全統括AI: {res_['conclusion']}\n方向の会議: {res_['verdict']} ({res_['overall']:+.2f}) / リスク: {res_['risk']['level']}")
                      + "".join(f"\n・{w_}: {y_}" for w_, y_ in res_["risk"]["items"][:2])
                      + "\n━━━━━━━━━━\n直近3時間の合図: " + (" / ".join(ev_) if ev_ else "なし (作戦の条件がそろわなかった)")
                      + "\n保有中: " + __import__("fxpred.positions", fromlist=["x"]).summary())

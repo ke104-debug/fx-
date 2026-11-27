@@ -257,8 +257,22 @@ def morning_message(h: pd.DataFrame, a: dict, fc: dict, reviews: list[dict], lea
             lines += hansei.lines(hansei.run(h))
     except Exception as e:
         print("反省会のエラー:", e)
+    try:   # 統廃合後 (2026-11-27): 組織の会議の代わりに情報部の環境メモ。向きは出さない
+        from .org import mode as _md
+        if _md.simple():
+            from .org import meeting, infodesk, gem, groq
+            org_res = meeting.final(h)
+            lines += ["━━━━━━━━━━", f"結論 (ボスAI): {org_res['conclusion']}", "環境メモ (情報部):"] + [f"・{x}" for x in infodesk.memo(h, org_res)]
+            from .signal_audit import inspector_block
+            ib = inspector_block()
+            lines.append("監査・点検部: " + ("問題あり → " + ib[0][:60] if ib else "売買に関わる問題なし"))
+            lines += [f"・{gem.status()}", f"・{groq.status()}"]
+    except Exception as e:
+        print("環境メモのエラー:", e)
     try:   # AI の組織 (検証中): 全統括AIの結論・リスク管理部隊・Gemini のまとめ・監査AI
-        from .org import meeting, auditor
+        from .org import meeting, auditor, mode as _md2
+        if _md2.simple():
+            raise StopIteration    # 統廃合後は出さない (mode を full に戻すと元どおり)
         org_res = meeting.final(h)
         lines += ["━━━━━━━━━━", "AIの組織の会議 (検証中・参考)", f"・全統括AI: {org_res['conclusion']}",
                   f"・リスク管理部隊: {org_res['risk']['level']}" + (f" ({org_res['risk']['items'][0][1]})" if org_res["risk"]["items"] else "")]
@@ -291,6 +305,8 @@ def morning_message(h: pd.DataFrame, a: dict, fc: dict, reviews: list[dict], lea
             lines.append(f"・{groq.status()}")
         except Exception:
             pass
+    except StopIteration:
+        pass
     except Exception as e:
         print("AIの組織のエラー:", e)
     try:

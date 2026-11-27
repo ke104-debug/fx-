@@ -84,6 +84,9 @@ def c_freshness(h):
     if not _market_open():
         return True, "週末のため確認しない"
     lim = {"org.csv": 3, "quick_ai.csv": 1, "research.csv": 4}
+    from .org import mode
+    if mode.paused("5分監視の見立て"):
+        lim.pop("quick_ai.csv")      # 統廃合で休止中
     bad = []
     for f, hours in lim.items():
         try:

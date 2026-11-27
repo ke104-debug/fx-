@@ -27,6 +27,9 @@ def _org():
     try:
         import os
         og = pd.read_csv(os.path.join(os.path.dirname(__file__), "..", "journal", "org.csv")).iloc[-1]
+        from .org import mode
+        if mode.simple():
+            return f"{og.get('conclusion', '')} / リスク {og.get('risk', '')}"
         return f"{og.get('conclusion', '')} / 方向の会議 {og.get('verdict', '')} {float(og.get('overall', 0)):+.2f} / リスク {og.get('risk', '')}"
     except Exception:
         return "記録なし"
