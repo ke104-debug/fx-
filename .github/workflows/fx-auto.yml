@@ -22,7 +22,7 @@ on:
         default: false
 permissions:
   contents: write
-  actions: read
+  actions: write    # 夜の検証部屋を毎時の分析から起動するため
 concurrency: fx-shared
 jobs:
   run:
@@ -52,6 +52,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
           FX_STATUS_NOW: ${{ inputs.status && '1' || '' }}
       - name: 状態と記録を保存
         if: always()

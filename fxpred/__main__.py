@@ -76,6 +76,15 @@ def main(argv):  # noqa: C901
             st["nightly_done"] = f"{now:%Y-%m-%d}"
             os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
             json.dump(st, open(path, "w"), ensure_ascii=False, indent=1)
+        # 夜の検証部屋 (日本時間 3時台、火〜土): GitHub の定期実行は抜けやすい (3日で1回しか動かなかった) ので、毎時の分析から起動する
+        if now.hour == 3 and st.get("lab_started") != f"{now:%Y-%m-%d}" and 1 <= now.weekday() <= 5:
+            import subprocess
+            r = subprocess.run(["gh", "workflow", "run", "fx-lab.yml", "-r", "main"], capture_output=True, text=True)
+            print("夜の検証部屋を起動:", "OK" if r.returncode == 0 else f"失敗のエラー {r.stderr[:100]}")
+            st = json.load(open(path)) if os.path.exists(path) else {}
+            st["lab_started"] = f"{now:%Y-%m-%d}"
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            json.dump(st, open(path, "w"), ensure_ascii=False, indent=1)
         # 朝の報告は日本時間 8時台 (利用者の指示。2026-11-25 までは10時台)
         if now.hour == 8 and st.get("morning_done") != f"{now:%Y-%m-%d}" and now.weekday() < 5 or "--morning" in args:
             dailyplan.run()
