@@ -365,3 +365,4 @@ time_utc,pt_day,job,model,outcome,code,tokens
 2026-11-27 10:34:47,2026-11-27,15分の見立て,gemini-3.8-flash,fail,503,0
 2026-11-27 10:37:38,2026-11-27,ニュース,gemini-3.8-flash,fail,503,0
 2026-11-27 10:45:20,2026-11-27,15分の見立て,gemini-3.8-flash,fail,503,0
+2026-11-27 10:49:32,2026-11-27,ニュース,gemini-3.8-flash,fail,503,0
