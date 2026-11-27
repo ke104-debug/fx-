@@ -23,7 +23,7 @@ JST = "Asia/Tokyo"
 # (作戦, 相場状態) -> 1回のリスク (資金に対する損失上限)。最大下落20%以内を目安に抑えた設定
 RULES = {("S", "荒れ"): 0.04, ("H4", "通常"): 0.015, ("H5", "通常"): 0.01, ("H3", "通常"): 0.01, ("H3", "トレンド"): 0.015}
 LABEL = {"S": "急変の反動 (流れの方向)", "H3": "東京レンジのロンドン抜け", "H4": "レンジ逆張り (流れの方向)", "H5": "指標発表直後の順張り",
-         "SF": "急変に付いていく (流れの方向)", "TF": "流れ買い・長期"}
+         "SF": "急変に付いていく (流れの方向)", "TF": "流れ買い・長期", "S5": "急変の反動 (5分版・未検証)"}
 
 
 def notify_keys() -> set:
@@ -241,7 +241,7 @@ def quick_chance(trigger, price):
     serious = [w for w in stop_why if w.startswith(("重要指標", "急変の最中", "週末"))]
     score = edge.confidence(ok, agree, len(stop_why), learn.get("cond_weights"))
     send_at = learn.get("send_at_quick", edge.SEND_AT_QUICK)
-    key = "S" if kind == "rebound" else "H4"
+    key = "S5" if kind == "rebound" else "H4"   # 5分版の反動は検証済みの S (毎時版) と別の定義なので別の名前・記録だけ (2026-11-27 監査 A2)
     if key not in notify_keys():   # 根拠の弱い作戦は記録だけ
         log_signal(now.floor("min"), key, {"side": side, "entry": price, "stop": stop, "target": tgt}, 0, "記録のみ",
                    sent=False, conditions="記録のみ")
@@ -434,7 +434,7 @@ def run(dry=False):
             except Exception as e:
                 print("介入警戒の確認のエラー:", e)
         strength_against = False
-        if key == "S":   # 急変に付いていく合図: ドルか円の強さが逆向きなら注意 (23年で成績が悪い。影の運用で記録してから止めるか判断)
+        if key == "S":   # 急変の反動: ドルか円の強さが逆向きなら注意 (急変の研究からの注意。S そのものでは未検証なので注意書きのみ)
             try:
                 from .org import strength as _stg
                 strength_against = _stg.against(s["side"], _stg.now(h.Close))
@@ -474,7 +474,7 @@ def run(dry=False):
                                     f" (2016年以降 {_ss['R16']:+.2f}R)\n━━━━━━━━━━", 1)
         except Exception:
             pass
-        if key == "S":   # 遅れを入れた再検証: 急変に付いていく取引は15分を過ぎると期待値がほぼ0になる
+        if key == "S":   # 遅れの検証 (2026-11-27、1分足・S の定義そのもの): 0分 +0.12R / 15分 +0.06R / 30分 +0.07R / 60分 +0.02R → 15分で見送り
             body = body.replace("通知から60分を過ぎたら見送り", "通知から15分を過ぎたら見送り")
         send_at = learn.get("send_at", edge.SEND_AT)
         skip = score < send_at and key not in URGENT

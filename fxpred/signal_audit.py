@@ -7,7 +7,7 @@
 import pandas as pd
 
 # 作戦ごとの「必ず満たすべき条件」(検証済みの形)。流れの方向 = 大きな流れ (20日平均の向き、trend_up) と同じ向き
-WITH_TREND = {"H4": "レンジ逆張り (流れの方向)", "S": "急変の反動 (流れの方向)", "SF": "急変に付いていく (流れの方向)"}
+WITH_TREND = {"H4": "レンジ逆張り (流れの方向)", "S": "急変の反動 (流れの方向)", "SF": "急変に付いていく (流れの方向)", "S5": "急変の反動 (5分版)"}
 
 
 def rule_ok(key: str, side: int, h: pd.DataFrame, i: int | None = None) -> tuple[bool, str]:
