@@ -26,8 +26,22 @@ def clean(x: str) -> str:
     return x
 
 
+def _stats(key):
+    try:
+        import json, os
+        return json.load(open(os.path.join(os.path.dirname(__file__), "..", "config", "strategy_stats.json")))["stats"].get(key)
+    except Exception:
+        return None
+
+
 def signal(side: int, entry: float, stop: float, target: float | None, conf: int, reasons: list[str],
-           cautions: list[str], valid: str, no_trade: list[str] | None = None) -> tuple[str, str]:
+           cautions: list[str], valid: str, no_trade: list[str] | None = None, key: str | None = None) -> tuple[str, str]:
+    # 信頼度 = その作戦の23年の勝率 (2026-11-27 K003: 以前の点数は2.8年のデータで決めた配点で、テクニカルを予想に使っていた)
+    ss = _stats(key) if key else None
+    conf_note = ""
+    if ss:
+        conf = int(round(ss["win"] * 100))
+        conf_note = f"（23年の勝率。{ss['n']}回・1回平均 {ss['R']:+.2f}R。損切りより利益を大きく取るので5割未満でもプラス）"
     if target is None:                     # 利確を決めない作戦でも、目安は必ず出す (損切り幅の2倍)
         target = entry + side * 2 * abs(entry - stop)
     word = "買い" if side == 1 else "売り"
@@ -43,7 +57,7 @@ def signal(side: int, entry: float, stop: float, target: float | None, conf: int
         f"**エントリー: {lo:.2f} 〜 {hi:.2f}**",
         f"**損切り　: {stop:.2f}**（{pips(entry, stop, side):+d} pips）",
         f"**利確　　: {target:.2f}**（{pips(entry, target, side):+d} pips）",
-        f"**信頼度　: {conf}%**　損益比 1 : {rr:.1f}",
+        f"**信頼度　: {conf}%**　損益比 1 : {rr:.1f}" + conf_note,
         f"**遅れた時: {entry + side * max(0.05, 0.3 * abs(entry - stop)):.2f} より不利なら入らない**（通知から60分を過ぎたら見送り）",
         "━━━━━━━━━━",
     ]

@@ -137,6 +137,9 @@ def _reason(k: str, x: pd.DataFrame) -> str:
         return ""
 
 
+TECH_SECTIONS = ("相場分析", "テクニカル", "ローソク足", "チャートパターン", "サポレジ", "マルチタイム", "ボラティリティ", "市場構造")
+
+
 def decide(ops: list[dict], w: dict | None = None) -> dict:
     """方向の会議 (全統括AIの計算方法):
       1) 各担当の意見 b (-1〜+1) と重み w (検証部隊が23年・実際の記録で決めた値。0なら判断に入れない)
@@ -146,6 +149,10 @@ def decide(ops: list[dict], w: dict | None = None) -> dict:
       5) 意見が無い担当 (Gemini が答えない時など) は分子・分母の両方から外れる (黙った担当で結論が偏らない)
     その後 final() で、作戦部隊の合図・リスク管理部隊 (データ監視・資金管理を含む) の判定と合わせて最終結論を出す"""
     w = dict(weights() if w is None else w)
+    # テクニカルは方向の票を持たない (2026-11-27 利用者の指摘 K003: テクニカルは予想ではなく、予想の精度向上に使う。config/roles.json)
+    for n in list(w):
+        if n.split("|")[0] in TECH_SECTIONS:
+            w[n] = 0.0
     try:
         grp = json.load(open(W_PATH)).get("groups", [])
     except Exception:

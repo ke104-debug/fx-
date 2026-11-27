@@ -145,9 +145,28 @@ def c_csv_shape(h):
     return not bad, " / ".join(bad) or "記録ファイルの形は正しい"
 
 
+def c_roles(h):
+    """役割の点検 (K003): 判断を決める・止める部品が、根拠のない役割違いのまま使われていないか (config/roles.json)。
+    あわせて、テクニカルが方向の票を持っていないか"""
+    import json as _j
+    bad = []
+    try:
+        r = _j.load(open(J("config", "roles.json")))["parts"]
+        for p in r:
+            if not p.get("ok") and any(x in p["role"] for x in ("決める", "止める")) and "使っていない" not in p.get("fix", ""):
+                bad.append(f"{p['name']} ({p['role']}): {p.get('fix', '')[:50]}")
+    except Exception as e:
+        bad.append(f"役割の一覧を読めない ({str(e)[:40]})")
+    from .org.meeting import TECH_SECTIONS, weights as _w
+    tech = [k for k, v in _w().items() if v and k.split("|")[0] in TECH_SECTIONS]
+    if tech:
+        bad.append("テクニカルが方向の票の重みを持っている (会議では0にしている): " + " / ".join(tech[:3]))
+    return not bad, " / ".join(bad) or "判断に使う部品はすべて根拠のある役割"
+
+
 LIGHT = {"合図と作戦の条件": c_signal_rules, "損切り・利確の向き": c_signal_geometry, "見張り中の取引": c_positions,
          "記録の新しさ": c_freshness, "影の運用の記録": c_shadow_alive, "通知している作戦の根拠": c_live_strength,
-         "記録ファイルの形": c_csv_shape}
+         "記録ファイルの形": c_csv_shape, "部品の役割": c_roles}
 
 
 # ---------------------------------------------------------------- 毎晩だけ (GitHub のログ・AI)
@@ -216,7 +235,8 @@ def c_ai_code_review(h):
     r, who = groq.ask("点検の補助",
                       "あなたは FX の通知システムのコードを点検する係。次の変更 (git diff) に、"
                       "①作戦の名前や説明と中身の食い違い ②損切り・利確・売り買いの向きの間違い ③例外を握りつぶして処理が止まっても気づけない所"
-                      " ④記録が保存されない所 ⑤未来の情報が混ざる所 があれば挙げる。推測ではなく diff の中の根拠 (ファイル名と内容) を書く。"
+                      " ④記録が保存されない所 ⑤未来の情報が混ざる所 ⑥テクニカル指標や AI の予想を、売買の向きを決める主な根拠にしている所"
+                      " (テクニカルは入る時・降りる時の調整役で、向きは検証済みの作戦と流れで決める) があれば挙げる。推測ではなく diff の中の根拠 (ファイル名と内容) を書く。"
                       '無ければ空。JSON だけ: {"problems": [{"file": "...", "what": "60字以内", "why": "60字以内"}]}\n\n'
                       f"決まり:\n{rules}\n\n変更:\n{diff[:6000]}")
     if not isinstance(r, dict):

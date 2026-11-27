@@ -88,7 +88,7 @@ def check(st: dict, now_epoch: int, price: float):
     lim = s["entry"] + s["side"] * 0.6 * s["atr"]
     cautions = [f"入る目安: 通知から60分以内、かつ {lim:.3f} より不利な値なら見送り (23年の検証で60分遅れても成績は変わらない)"] + (["保有中の取引と逆向き"] if rel == "opposite" else []) + notes[:3]
     title, body = fmt.signal(s["side"], price, s["stop"], s["target"], 60, reasons, cautions,
-                             f"{(now + pd.Timedelta(hours=9)):%m/%d %H:%M} から24時間", None)
+                             f"{(now + pd.Timedelta(hours=9)):%m/%d %H:%M} から24時間", None, key="SF")
     if ss:
         body = body.replace("━━━━━━━━━━", f"過去の実績: この作戦は23年で{ss['n']}回・勝率{ss['win']:.0%}・1回平均{ss['R']:+.2f}R"
                             f" (2016年以降 {ss['R16']:+.2f}R)\n━━━━━━━━━━", 1)

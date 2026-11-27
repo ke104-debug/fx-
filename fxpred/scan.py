@@ -470,7 +470,7 @@ def run(dry=False):
         if rel == "opposite":
             cautions = ["保有中の取引と逆向き。先に保有中を決済するか検討"] + cautions
         title, body = fmt.signal(s["side"], s["entry"], s["stop"], s.get("target"), score, reasons, cautions,
-                                 f"{t.tz_convert(JST):%m/%d %H:%M} から{valid}", serious)
+                                 f"{t.tz_convert(JST):%m/%d %H:%M} から{valid}", serious, key=key if key in notify_keys() else None)
         try:   # 信頼度の数字だけでは強く見えすぎるので、この作戦の過去の実績 (23年) を正直に添える
             _ss = json.load(open(os.path.join(os.path.dirname(__file__), "..", "config", "strategy_stats.json")))["stats"].get(key)
             if _ss:

@@ -65,7 +65,7 @@ def check(st: dict, dry=False) -> list[tuple[str, str, str]]:
                         f"利確は置かずに伸ばす。最も伸びた値から {TRAIL_ATR:.0f}×日足ATR ({TRAIL_ATR * s['atr']:.2f}円) 後ろに損切りを付いていかせる",
                         "流れが下向きに変わったら (毎朝10時の判断) 決済を知らせる"] + notes
             if fresh:
-                title, body = fmt.signal(1, px, s["stop"], None, 60, reasons, cautions, "本日中 (遅れても成績はほぼ変わらない)", None)
+                title, body = fmt.signal(1, px, s["stop"], None, 60, reasons, cautions, "本日中 (遅れても成績はほぼ変わらない)", None, key="TF")
             else:
                 title = f"📈 流れ買い (保有中の目安) USD/JPY"
                 body = (f"この作戦は {(s['entry_time'] + pd.Timedelta(hours=9)):%m/%d %H:%M} に **{s['entry']:.3f}** で買いに入り、今も買いを持っている状態です\n"
