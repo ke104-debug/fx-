@@ -263,6 +263,11 @@ def morning_message(h: pd.DataFrame, a: dict, fc: dict, reviews: list[dict], lea
             from .org import meeting, infodesk, gem, groq
             org_res = meeting.final(h)
             lines += ["━━━━━━━━━━", f"結論 (ボスAI): {org_res['conclusion']}", "環境メモ (情報部):"] + [f"・{x}" for x in infodesk.memo(h, org_res)]
+            try:
+                from . import userview
+                lines += [f"・{x}" for x in userview.lines(h)]
+            except Exception as e:
+                print("利用者の相場観のエラー:", e)
             from .signal_audit import inspector_block
             ib = inspector_block()
             lines.append("監査・点検部: " + ("問題あり → " + ib[0][:60] if ib else "売買に関わる問題なし"))

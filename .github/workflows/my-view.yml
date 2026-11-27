@@ -1,0 +1,37 @@
+name: 自分の相場観を登録
+# 利用者の相場観 (向き・上値・下値・シナリオ) を記録する。売買の判断には使わず、答え合わせと研究の参考にする。公開リポジトリに残る (取引の金額は書かない)
+on:
+  workflow_dispatch:
+    inputs:
+      bias: {description: "向き", type: choice, options: ["買い", "売り", "様子見"], default: "買い"}
+      upper: {description: "上値 (例 160.00)", default: ""}
+      lower: {description: "下値 (例 159.00)", default: ""}
+      scenario: {description: "シナリオ (例 159.60を抜ければ160、反発なら159)", default: ""}
+permissions:
+  contents: write
+concurrency: {group: my-view, cancel-in-progress: false}
+jobs:
+  add:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13", cache: pip }
+      - run: pip install -r requirements.txt
+      - name: 記録して保存
+        env:
+          BIAS: ${{ inputs.bias }}
+          UP: ${{ inputs.upper }}
+          LO: ${{ inputs.lower }}
+          SC: ${{ inputs.scenario }}
+        run: |
+          git config user.name "ai-fx-bot"
+          git config user.email "ai-fx-bot@users.noreply.github.com"
+          python - <<'PY'
+          import os
+          from fxpred import userview, scan
+          f = lambda x: float(x) if x.strip() else None
+          px = float(scan.load_recent().Close.iat[-1])
+          print(userview.add(os.environ["BIAS"], f(os.environ["UP"]), f(os.environ["LO"]), os.environ["SC"], price=px, source="利用者 (登録ボタン)"))
+          PY
+          bash tools/save.sh "利用者の相場観を登録" journal/user_views.csv
