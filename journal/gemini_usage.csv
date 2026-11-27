@@ -400,3 +400,6 @@ time_utc,pt_day,job,model,outcome,code,tokens
 2026-11-27 14:01:24,2026-11-27,調査の確認,gemini-3.6-flash,fail,429day,0
 2026-11-27 14:01:24,2026-11-27,調査の確認,gemini-3.5-flash,fail,429day,0
 2026-11-27 14:01:24,2026-11-27,調査の確認,gemini-2.5-flash,fail,404,0
+2026-11-27 14:01:38,2026-11-27,15分の見立て,gemini-omni-1.2-flash,fail,429day,0
+2026-11-27 14:01:38,2026-11-27,15分の見立て,gemini-omni-1.1-flash,fail,429day,0
+2026-11-27 14:01:51,2026-11-27,15分の見立て,gemini-flash-latest,fail,503,0
