@@ -251,6 +251,12 @@ def quick_chance(trigger, price):
         return None
     if rel == "opposite":
         ng = ["保有中の取引と逆向き。先に保有中を決済するか検討"] + list(ng)
+    try:   # 5分監視の AI の読みが逆向きなら、注意として必ず書く (11/27 は AI が「上昇圧力強め」なのに売りを送った)
+        _q = pd.read_csv(os.path.join(os.path.dirname(__file__), "..", "journal", "quick_ai.csv")).iloc[-1]
+        if pd.Timestamp(_q.time_utc, tz="UTC") > now - pd.Timedelta(minutes=15) and float(_q.view30) * side <= -0.3:
+            ng = [f"5分監視のAIは逆向きの見方 ({float(_q.view30):+.1f}: {_q.state})"] + list(ng)
+    except Exception as e:
+        print("5分監視のAIの読みを確かめられませんでした:", e)
     reasons = [why] + [x for x in ok if not x.startswith(("相場状態", "価格帯"))]
     title, body = fmt.signal(side, price, stop, tgt, score, reasons, [x for x in ng] + stop_why,
                              f"{now.tz_convert(JST):%m/%d %H:%M} から最長48時間", serious)

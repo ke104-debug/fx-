@@ -203,8 +203,8 @@ def c_ai_code_review(h):
     try:
         diff = subprocess.run(["git", "log", "--since=24 hours ago", "-p", "--no-color", "-U2", "--", "fxpred/*.py", "fxpred/org/*.py"],
                               capture_output=True, text=True, cwd=ROOT, timeout=60).stdout
-    except Exception:
-        diff = ""
+    except Exception as e:
+        return False, f"コードの変更を読めなかった ({type(e).__name__})"
     if not diff.strip():
         return True, "直近24時間のコードの変更なし"
     rules = ("作戦の名前どおりの条件で合図を出す (『流れの方向』なら大きな流れと同じ向き)。損切りは買いなら下・売りなら上。"
