@@ -5,6 +5,7 @@
 
 ## 2026-11-27 (ボスAIと会話できるように: 利用者の要望)
 - fxpred/org/boss_chat.py・Actions『ボスAIに話しかける』(boss-chat.yml)・tools/ask_boss.sh を追加。Claude Code からも `bash tools/ask_boss.sh "質問"` で話しかけられる
+- チャットのページ docs/boss/index.html (GitHub Pages で公開: ボスAI 相談室)。利用者の GitHub トークン (この repo の Actions だけ) を端末のブラウザに保存して話しかける。答えは req の番号で会話の記録から見つける
 - ボスAIは記録 (未解決の問題・ボスの判断・点検の NG・合図・決済・通知の設定・作戦の成績・過去のミス・競争リーグ) だけを根拠に答える。会話でルールは変えない。会話は journal/boss_chat.csv (公開) に残る。Groq/Gemini の無料枠 (ボスとの会話 1日40回)
 
 ## 2026-11-27 (組織の競争リーグ: 利用者の提案 / 流れ×タイミングが動いていなかった: M018)

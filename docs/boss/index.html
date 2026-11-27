@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ボスAI 相談室</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* 1列のチャット。上に状態の帯、下に入力欄を固定。ボスの発言は左、利用者は右 */
+:root {
+  --bg: #f3f5f4; --panel: #ffffff; --fg: #18211d; --muted: #5d6b64; --line: #d9e0dc;
+  --boss: #e6eeea; --me: #1f5c47; --me-fg: #ffffff; --accent: #1f5c47; --warn: #9a5b00; --bad: #b3261e;
+  --sans: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f1412; --panel: #171e1b; --fg: #e3ebe7; --muted: #93a29a; --line: #2a3530;
+    --boss: #1d2824; --me: #2f7d61; --me-fg: #ffffff; --accent: #6cc3a0; --warn: #e0a54a; --bad: #f2867d; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.7 var(--sans); display: flex; flex-direction: column; }
+header { position: sticky; top: 0; z-index: 5; background: var(--panel); border-bottom: 1px solid var(--line);
+  padding: calc(env(safe-area-inset-top, 0px) + 10px) max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px)); }
+.bar { max-width: 760px; margin: 0 auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+h1 { font-size: 17px; margin: 0; font-weight: 700; letter-spacing: .02em; }
+.sub { color: var(--muted); font-size: 12px; }
+.grow { flex: 1; min-width: 0; }
+button { font: inherit; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); padding: 6px 12px; cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--me-fg); font-weight: 700; }
+@media (prefers-color-scheme: dark) { button.primary { color: #0f1412; } }
+button:disabled { opacity: .5; cursor: default; }
+button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+main { flex: 1; overflow-y: auto; padding: 16px max(16px, env(safe-area-inset-right, 0px)) 16px max(16px, env(safe-area-inset-left, 0px)); }
+.log { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.msg { display: flex; flex-direction: column; gap: 4px; max-width: 88%; min-width: 0; }
+.msg.me { align-self: flex-end; align-items: flex-end; }
+.who { font-size: 11px; color: var(--muted); font-family: var(--mono); letter-spacing: .03em; }
+.bubble { padding: 10px 14px; border-radius: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.boss .bubble { background: var(--boss); border-top-left-radius: 3px; }
+.me .bubble { background: var(--me); color: var(--me-fg); border-top-right-radius: 3px; }
+.thinking .bubble { color: var(--muted); font-style: italic; }
+.note { max-width: 760px; margin: 0 auto 4px; font-size: 13px; color: var(--muted); }
+.note.bad { color: var(--bad); }
+footer { background: var(--panel); border-top: 1px solid var(--line);
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 10px) max(16px, env(safe-area-inset-left, 0px)); }
+.composer { max-width: 760px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end; }
+textarea { flex: 1; min-width: 0; font: inherit; resize: none; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; background: var(--bg); color: var(--fg); max-height: 160px; }
+.hint { max-width: 760px; margin: 6px auto 0; font-size: 11px; color: var(--muted); }
+#settings { max-width: 760px; margin: 10px auto 0; border-top: 1px dashed var(--line); padding-top: 10px; display: grid; gap: 8px; font-size: 13px; }
+#settings input { font: 13px var(--mono); padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); width: 100%; }
+#settings ol { margin: 0; padding-left: 20px; color: var(--muted); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (prefers-reduced-motion: no-preference) { .thinking .bubble { animation: pulse 1.6s ease-in-out infinite; } }
+@keyframes pulse { 50% { opacity: .55; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="grow">
+      <h1>ボスAI 相談室</h1>
+      <div class="sub" id="status">USD/JPY 通知システムのボスAI。記録だけを根拠に答えます (会話でルールは変わりません)</div>
+    </div>
+    <button id="toggleSettings" type="button">接続の設定</button>
+  </div>
+  <div id="settings" hidden>
+    <div>話しかけるには、このリポジトリで Actions を動かせる GitHub のトークンが必要です。トークンはこの端末のブラウザにだけ保存され、GitHub 以外には送られません。チャットや Discord には貼らないでください。</div>
+    <ol>
+      <li>GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token</li>
+      <li>Repository access: Only select repositories → <b>fx-</b> だけ</li>
+      <li>Permissions: <b>Actions: Read and write</b> と <b>Contents: Read-only</b> だけ / 有効期限は90日など</li>
+    </ol>
+    <label for="token">トークン</label>
+    <input id="token" type="password" autocomplete="off" placeholder="github_pat_...">
+    <div class="row"><button class="primary" id="saveToken" type="button">保存</button><button id="clearToken" type="button">この端末から消す</button></div>
+  </div>
+</header>
+<main id="scroller">
+  <div class="log" id="log" aria-live="polite">
+    <div class="note">これまでの会話を読み込んでいます…</div>
+  </div>
+</main>
+<footer>
+  <form class="composer" id="form">
+    <textarea id="q" rows="2" maxlength="300" placeholder="例: 今日はなぜ売り寄りなの？ / 今いちばん危ない問題は？"></textarea>
+    <button class="primary" id="send" type="submit">送る</button>
+  </form>
+  <div class="hint">答えまで1〜2分かかります (GitHub Actions でボスAIが記録を読んでから答えるため)。会話は公開のリポジトリに残るので、金額や持ち高は書かないでください。</div>
+</footer>
+<script>
+const REPO = "ke104-debug/fx-", API = "https://api.github.com/repos/" + REPO;
+const $ = id => document.getElementById(id);
+const store = { get(k) { try { return localStorage.getItem(k) || ""; } catch { return ""; } },
+                set(k, v) { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch {} } };
+let token = store.get("bossToken");
+
+function parseCSV(text) {
+  const rows = []; let row = [], f = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+    else if (c === '"') q = true;
+    else if (c === ",") { row.push(f); f = ""; }
+    else if (c === "\n") { row.push(f); rows.push(row); row = []; f = ""; }
+    else if (c !== "\r") f += c;
+  }
+  if (f || row.length) { row.push(f); rows.push(row); }
+  const head = rows.shift() || [];
+  return rows.filter(r => r.length > 1).map(r => Object.fromEntries(head.map((h, i) => [h, r[i] ?? ""])));
+}
+function headers(json) {
+  const h = { "Accept": json ? "application/vnd.github+json" : "application/vnd.github.raw+json", "X-GitHub-Api-Version": "2022-11-28" };
+  if (token) h.Authorization = "Bearer " + token;
+  return h;
+}
+async function loadChat() {
+  const r = await fetch(API + "/contents/journal/boss_chat.csv?ref=main&t=" + Date.now(), { headers: headers(false), cache: "no-store" });
+  if (r.status === 404) return [];
+  if (!r.ok) throw new Error("会話の記録を読めませんでした (" + r.status + ")");
+  return parseCSV(await r.text());
+}
+function bubble(kind, who, text) {
+  const m = document.createElement("div"); m.className = "msg " + kind;
+  const w = document.createElement("div"); w.className = "who"; w.textContent = who;
+  const b = document.createElement("div"); b.className = "bubble"; b.textContent = String(text || "").replace(/\*\*/g, "");
+  m.append(w, b); $("log").append(m); $("scroller").scrollTop = $("scroller").scrollHeight; return m;
+}
+function note(text, bad) {
+  const n = document.createElement("div"); n.className = "note" + (bad ? " bad" : ""); n.textContent = text;
+  $("log").append(n); $("scroller").scrollTop = $("scroller").scrollHeight; return n;
+}
+const jst = t => { const d = new Date(t.replace(" ", "T") + ":00Z"); return isNaN(d) ? t : d.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }); };
+function render(rows) {
+  $("log").textContent = "";
+  if (!rows.length) note("まだ会話はありません。下の欄から話しかけてください。");
+  for (const r of rows.slice(-40)) {
+    bubble("me", (r.asker || "利用者") + " · " + jst(r.time_utc), r.question);
+    bubble("boss", "ボスAI (" + (r.ai || "?") + ")", r.answer);
+  }
+}
+function updateStatus() {
+  $("status").textContent = token ? "接続済み。記録だけを根拠に答えます (会話でルールは変わりません)"
+                                  : "読むだけのモード。話しかけるには右上の「接続の設定」でトークンを登録してください";
+}
+async function refresh() {
+  try { render(await loadChat()); } catch (e) { $("log").textContent = ""; note(e.message, true); }
+}
+async function ask(question) {
+  const req = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  bubble("me", "あなた · いま", question);
+  const wait = bubble("boss thinking", "ボスAI", "記録を読んで考えています… (1〜2分)");
+  const r = await fetch(API + "/actions/workflows/boss-chat.yml/dispatches", { method: "POST", headers: headers(true),
+    body: JSON.stringify({ ref: "main", inputs: { question, asker: "利用者 (チャット)", req } }) });
+  if (!r.ok) {
+    wait.remove();
+    note(r.status === 401 || r.status === 403 || r.status === 404
+      ? "送れませんでした: トークンの権限が足りないか期限切れです (Actions: Read and write が必要)。接続の設定を確認してください。"
+      : "送れませんでした (" + r.status + ")。少し待ってもう一度送ってください。", true);
+    return;
+  }
+  const start = Date.now();
+  while (Date.now() - start < 6 * 60 * 1000) {
+    await new Promise(s => setTimeout(s, 12000));
+    try {
+      const hit = (await loadChat()).find(x => x.req === req);
+      if (hit) { wait.remove(); bubble("boss", "ボスAI (" + (hit.ai || "?") + ")", hit.answer); return; }
+    } catch {}
+  }
+  wait.remove();
+  note("6分待っても答えが届きませんでした。GitHub の Actions「ボスAIに話しかける」で失敗していないか確認してください。混んでいる時は、続けて送った質問が取り消されることがあります。", true);
+}
+$("form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const q = $("q").value.trim(); if (!q) return;
+  if (!token) { $("settings").hidden = false; $("token").focus(); return; }
+  $("send").disabled = true; $("q").value = "";
+  try { await ask(q); } catch (err) { note("送れませんでした: " + err.message, true); }
+  $("send").disabled = false;
+});
+$("q").addEventListener("keydown", e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) $("form").requestSubmit(); });
+$("toggleSettings").addEventListener("click", () => { $("settings").hidden = !$("settings").hidden; });
+$("saveToken").addEventListener("click", () => { token = $("token").value.trim(); store.set("bossToken", token); $("token").value = ""; $("settings").hidden = true; updateStatus(); refresh(); });
+$("clearToken").addEventListener("click", () => { token = ""; store.set("bossToken", ""); updateStatus(); });
+updateStatus(); refresh();
+</script>
+</body>
+</html>

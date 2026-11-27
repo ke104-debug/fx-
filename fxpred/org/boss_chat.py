@@ -1,7 +1,7 @@
 """ボスAIとの会話 (利用者の要望 2026-11-27: Claude Code からボスAIに話しかけたい)。
 質問に、記録 (未解決の問題・ボスの判断・点検の結果・合図・作戦の成績・過去のミス・競争リーグ) だけを根拠に答える。
 記録に無いことは『記録に無い』と答える。会話でルールは変えない (指示や指摘は台帳に残すだけ)。
-使い方: GitHub Actions『ボスAIに話しかける』(boss-chat.yml) / 手元からは tools/ask_boss.sh "質問"。記録 journal/boss_chat.csv (公開されるので金額・持ち高は書かない)"""
+使い方: チャットのページ (docs/boss/index.html、GitHub Pages) / GitHub Actions『ボスAIに話しかける』(boss-chat.yml) / 手元からは tools/ask_boss.sh "質問"。記録 journal/boss_chat.csv (公開されるので金額・持ち高は書かない)"""
 import json
 import os
 
@@ -48,7 +48,7 @@ def context() -> str:
     return "\n".join(parts)
 
 
-def ask(question: str, asker: str = "利用者") -> str:
+def ask(question: str, asker: str = "利用者", req: str = "") -> str:
     from . import groq
     prompt = ("あなたは USD/JPY 通知システムを率いる『ボスAI』。役目は各部署の暴走と甘やかし合いを引き締めること。"
               "次の記録だけを根拠に、日本語で短く (400字以内) 率直に答える。記録に無いことは『記録に無い』と言い、推測で数字を作らない。"
@@ -57,7 +57,7 @@ def ask(question: str, asker: str = "利用者") -> str:
     r, who = groq.ask("ボスとの会話", prompt, as_json=False)
     ans = (r if isinstance(r, str) else "") .strip() or "(AI を呼べず答えられませんでした)"
     row = {"time_utc": f"{pd.Timestamp.now(tz='UTC'):%Y-%m-%d %H:%M}", "asker": asker, "question": question[:300],
-           "answer": ans[:1500], "ai": who}
+           "answer": ans[:1500], "ai": who, "req": req[:40]}
     old = pd.read_csv(LOG, dtype=str) if os.path.exists(LOG) else pd.DataFrame()
     pd.concat([old, pd.DataFrame([row])]).to_csv(LOG, index=False)
     return f"ボスAI ({who}): {ans}"
@@ -65,4 +65,4 @@ def ask(question: str, asker: str = "利用者") -> str:
 
 if __name__ == "__main__":
     import sys
-    print(ask(os.getenv("Q") or " ".join(sys.argv[1:]), os.getenv("ASKER", "利用者")))
+    print(ask(os.getenv("Q") or " ".join(sys.argv[1:]), os.getenv("ASKER", "利用者"), os.getenv("REQ", "")))

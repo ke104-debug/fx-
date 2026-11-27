@@ -5,6 +5,7 @@ on:
     inputs:
       question: {description: "質問", required: true}
       asker: {description: "話しかけた人", default: "利用者"}
+      req: {description: "チャットのページが答えを見つけるための番号 (空でよい)", default: ""}
 permissions:
   contents: write
 concurrency: {group: boss-chat, cancel-in-progress: false}
@@ -22,6 +23,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           Q: ${{ inputs.question }}
           ASKER: ${{ inputs.asker }}
+          REQ: ${{ inputs.req }}
         run: |
           git config user.name "ai-fx-bot"
           git config user.email "ai-fx-bot@users.noreply.github.com"
