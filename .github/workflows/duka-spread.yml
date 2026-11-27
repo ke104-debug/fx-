@@ -1,0 +1,23 @@
+name: スプレッドの実測 (手動)
+# 時間帯ごとの手数料 (スプレッド) の広がりを Dukascopy の売値・買値から測り、config/spread_by_hour.json を作る (利用者の指摘 K001)。無料
+on:
+  workflow_dispatch:
+    inputs:
+      start: {description: "開始年", default: "2016"}
+      end: {description: "終了年", default: "2026"}
+permissions:
+  contents: write
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13", cache: pip }
+      - run: pip install -r requirements.txt
+      - run: python tools/spread_table.py ${{ inputs.start }} ${{ inputs.end }}
+      - run: |
+          git config user.name "ai-fx-bot"
+          git config user.email "ai-fx-bot@users.noreply.github.com"
+          bash tools/save.sh "スプレッドの実測 (時間帯ごと)" config/spread_by_hour.json

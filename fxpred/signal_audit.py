@@ -106,3 +106,17 @@ def gate(side: int) -> tuple[bool, list[str]]:
     except Exception as e:
         print("ボスAIの判断を読めませんでした:", e)
     return False, notes
+
+
+def cost_gate(entry: float, stop: float) -> tuple[bool, str]:
+    """手数料の確認 (利用者の指摘 K001): 手数料が損切り幅の2割以上なら送らない、1割以上なら注意。重要指標の5分以内は広がると見る"""
+    from . import costs
+    near = False
+    try:
+        from . import calendar as cal
+        now = pd.Timestamp.now(tz="UTC")
+        near = any(abs((e["time"] - now).total_seconds()) <= 300 for e in cal.events(impacts=("High",)))
+    except Exception as e:
+        print("指標の時刻を確かめられませんでした:", e)
+    verdict, txt = costs.check(entry, stop, event_near=near)
+    return verdict == "見送り", txt

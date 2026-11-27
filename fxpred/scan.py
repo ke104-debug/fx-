@@ -273,6 +273,10 @@ def quick_chance(trigger, price):
         print("5分監視のAIの読みを確かめられませんでした:", e)
     reasons = [why] + [x for x in ok if not x.startswith(("相場状態", "価格帯"))]
     _blk, _notes = signal_audit.gate(side)
+    _cb, _ct = signal_audit.cost_gate(price, stop)
+    _notes = [_ct] + _notes
+    if _cb:
+        _blk, _notes = True, [_ct]
     if _blk:
         print("(最終関門で止めた) " + " / ".join(_notes))
         return None
@@ -509,6 +513,10 @@ def run(dry=False):
         try:   # 最終関門: 点検部隊の問題があれば止める。監査AIの指摘は注意に必ず書く
             from . import signal_audit as _sa
             _blk, _notes = _sa.gate(s["side"])
+            _cb, _ct = _sa.cost_gate(s["entry"], s["stop"])
+            _notes = [_ct] + _notes
+            if _cb:
+                _blk, _notes = True, [_ct]
             if _blk:
                 print("(最終関門で止めた) " + " / ".join(_notes))
                 log_signal(t, key, s, score, "見送り(点検)", sent=False, conditions="点検")

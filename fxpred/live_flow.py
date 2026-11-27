@@ -54,7 +54,9 @@ def check(st: dict, dry=False) -> list[tuple[str, str, str]]:
     if s["open"]:
         if not mine:
             fresh = pd.Timestamp.now(tz="UTC") - s["entry_time"] <= pd.Timedelta(hours=26)
-            blk, notes = __import__("fxpred.signal_audit", fromlist=["x"]).gate(1)     # (止める?, 注意)
+            _sa = __import__("fxpred.signal_audit", fromlist=["x"])
+            blk, notes = _sa.gate(1)     # (止める?, 注意)
+            notes = [_sa.cost_gate(px, s["stop"])[1]] + notes
             if blk:
                 print("(流れ買い) 最終関門で止めた:", notes)
                 return []
