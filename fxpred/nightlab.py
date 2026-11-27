@@ -128,6 +128,11 @@ def run(force_train=False):
         print("点検部隊のエラー:", e)
     lines = summary()
     try:
+        from . import newswatch
+        lines += newswatch.score()
+    except Exception as e:
+        print("速報の答え合わせのエラー:", e)
+    try:
         from .org import eurwatch
         lines += eurwatch.score()
     except Exception as e:
