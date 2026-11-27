@@ -1,0 +1,29 @@
+name: ボスAIに話しかける
+# 質問にボスAIが記録だけを根拠に答える (Groq/Gemini の無料枠)。会話は journal/boss_chat.csv に残り公開される (金額・持ち高は書かない)
+on:
+  workflow_dispatch:
+    inputs:
+      question: {description: "質問", required: true}
+      asker: {description: "話しかけた人", default: "利用者"}
+permissions:
+  contents: write
+concurrency: {group: boss-chat, cancel-in-progress: false}
+jobs:
+  ask:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13", cache: pip }
+      - run: pip install -r requirements.txt
+      - name: 答える
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          Q: ${{ inputs.question }}
+          ASKER: ${{ inputs.asker }}
+        run: |
+          git config user.name "ai-fx-bot"
+          git config user.email "ai-fx-bot@users.noreply.github.com"
+          python -m fxpred.org.boss_chat
+          bash tools/save.sh "ボスAIとの会話" journal/boss_chat.csv
