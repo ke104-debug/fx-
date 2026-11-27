@@ -356,3 +356,4 @@ time_utc,pt_day,job,model,outcome,code,tokens
 2026-11-27 09:19:29,2026-11-27,相談役G,gemini-3.8-flash,fail,503,0
 2026-11-27 09:19:58,2026-11-27,調査の確認,gemini-3.8-flash,fail,503,0
 2026-11-27 09:34:35,2026-11-27,15分の見立て,gemini-3.8-flash,ok,,1034
+2026-11-27 09:49:21,2026-11-27,15分の見立て,gemini-3.8-flash,fail,503,0
