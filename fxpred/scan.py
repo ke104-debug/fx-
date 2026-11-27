@@ -628,6 +628,10 @@ def run(dry=False):
                     body_ += "\n━━━━━━━━━━\n環境メモ (情報部):\n" + "\n".join("・" + x for x in _inf.memo(h, res_)[1:])
                     _b = _ib()
                     body_ += "\n監査・点検部: " + ("問題あり → " + _b[0][:60] if _b else "売買に関わる問題なし")
+                    from .org import boss as _bs
+                    _oi = _bs.open_issues()
+                    if _oi:
+                        body_ = "🛑 ボスAI: 未解決の問題 " + " / ".join(_oi[:5]) + "\n━━━━━━━━━━\n" + body_
             except Exception as e:
                 print("環境メモのエラー:", e)
             try:   # ドル・円の強さ

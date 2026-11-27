@@ -271,6 +271,10 @@ def morning_message(h: pd.DataFrame, a: dict, fc: dict, reviews: list[dict], lea
             from .signal_audit import inspector_block
             ib = inspector_block()
             lines.append("監査・点検部: " + ("問題あり → " + ib[0][:60] if ib else "売買に関わる問題なし"))
+            from .org import boss as _bs
+            oi = _bs.open_issues()
+            if oi:
+                lines = lines[:1] + ["🛑 ボスAI: 未解決の問題 " + " / ".join(oi[:5])] + lines[1:]
             lines += [f"・{gem.status()}", f"・{groq.status()}"]
     except Exception as e:
         print("環境メモのエラー:", e)

@@ -99,10 +99,12 @@ def review(res: dict, h: pd.DataFrame) -> dict:
 
 def line(b: dict) -> str:
     rec = b.get("record", {})
+    oi = open_issues()
     r = f"全統括AIの成績 {rec['hit']:.0%} ({rec['n']}回)" if rec.get("hit") is not None else "全統括AIの成績はまだ集計中"
     return (f"👑 ボスAI: {b['verdict']}・{b['word']}"
             + ("".join(f"\n　・覆した理由: {x}" for x in b["overrides"]) if b["overrides"] else "")
-            + f"\n　・{r}")
+            + f"\n　・{r}"
+            + (("\n　・未解決の問題: " + " / ".join(oi[:4])) if oi else ""))
 
 
 def log(b: dict, res: dict):
@@ -114,3 +116,73 @@ def log(b: dict, res: dict):
         return
     os.makedirs(os.path.dirname(LOG), exist_ok=True)
     pd.concat([old, pd.DataFrame([row])]).to_csv(LOG, index=False)
+
+
+# ---------------------------------------------------------------- 未解決の問題の管理 (2026-11-27 利用者の指摘 K006)
+# 点検部隊の NG を台帳 (journal/issues.csv) に載せ、直るまで追いかける。放置させないのがボスAIの仕事。
+#  初めての NG → すぐ知らせる / 6時間たっても直らない → 6時間ごとに督促 / 24時間以上 → 『🛑 未解決』として毎回の報告の先頭に出し続ける
+#  直ったら (OK に戻ったら) 解決として記録し、知らせる。Claude は作業の最初にこの台帳の未解決を確かめる (CLAUDE.md)
+ISSUES = os.path.join(ROOT, "journal", "issues.csv")
+COLS = ["check", "first_utc", "last_utc", "count", "detail", "status", "resolved_utc", "last_notice_utc"]
+
+
+def _load_issues() -> pd.DataFrame:
+    try:
+        d = pd.read_csv(ISSUES, dtype=str).fillna("")
+        for c in COLS:
+            if c not in d:
+                d[c] = ""
+        return d[COLS].astype(str)
+    except Exception:
+        return pd.DataFrame(columns=COLS, dtype=str)
+
+
+def track_issues(rows: list[dict], deep=False, dry=False) -> list[tuple[str, str, str]]:
+    now = pd.Timestamp.now(tz="UTC")
+    d = _load_issues()
+    msgs, new, nag, fixed = [], [], [], []
+    for r in rows:
+        openm = (d.check == r["check"]) & (d.status == "未解決")
+        if not r["ok"]:
+            if openm.any():
+                i = d.index[openm][-1]
+                d.loc[i, ["last_utc", "detail"]] = [f"{now:%Y-%m-%d %H:%M}", str(r["detail"])[:300]]
+                d.loc[i, "count"] = str(int(float(d.loc[i, "count"] or 0)) + 1)
+                age = (now - pd.Timestamp(d.loc[i, "first_utc"], tz="UTC")).total_seconds() / 3600
+                last = pd.Timestamp(d.loc[i, "last_notice_utc"], tz="UTC") if str(d.loc[i, "last_notice_utc"]) not in ("", "nan") else now - pd.Timedelta(days=1)
+                if age >= 6 and (now - last) >= pd.Timedelta(hours=6):
+                    nag.append((r["check"], age, r["detail"]))
+                    d.loc[i, "last_notice_utc"] = f"{now:%Y-%m-%d %H:%M}"
+            else:
+                d.loc[len(d)] = [r["check"], f"{now:%Y-%m-%d %H:%M}", f"{now:%Y-%m-%d %H:%M}", "1", str(r["detail"])[:300], "未解決", "", f"{now:%Y-%m-%d %H:%M}"]
+                new.append((r["check"], r["detail"]))
+        elif openm.any():
+            # 毎晩だけの点検 (deep) は毎時の回では見ないので、OK になっても解決にしない
+            i = d.index[openm][-1]
+            d.loc[i, ["status", "resolved_utc"]] = ["解決", f"{now:%Y-%m-%d %H:%M}"]
+            fixed.append(r["check"])
+    if new:
+        msgs.append(("wait", "🔧 点検部隊: 新しい問題 (ボスAIが追跡を開始)",
+                     "\n".join(f"・**{c}**: {str(t)[:250]}" for c, t in new)
+                     + "\n━━━━━━━━━━\n直るまでボスAIが追いかけます (6時間ごとに督促、24時間を超えたら報告の先頭に出し続けます)"))
+    if nag:
+        msgs.append(("wait", "🛑 ボスAI: 未解決の問題の督促",
+                     "\n".join(f"・**{c}** — {age:.0f}時間 未解決: {str(t)[:200]}" for c, age, t in nag)
+                     + "\n━━━━━━━━━━\n修正を Claude に依頼してください (Claude は作業の最初にこの一覧を確認する決まり)"))
+    if fixed:
+        msgs.append(("info", "✅ ボスAI: 問題が解決しました", "\n".join(f"・{c}" for c in fixed)))
+    if not dry:
+        os.makedirs(os.path.dirname(ISSUES), exist_ok=True)
+        d.to_csv(ISSUES, index=False)
+    return msgs
+
+
+def open_issues() -> list[str]:
+    d = _load_issues()
+    d = d[d.status == "未解決"]
+    now = pd.Timestamp.now(tz="UTC")
+    out = []
+    for r in d.itertuples():
+        age = (now - pd.Timestamp(r.first_utc, tz="UTC")).total_seconds() / 3600
+        out.append(f"{'🛑' if age >= 24 else '⚠️'} {r.check} ({age:.0f}時間 未解決)")
+    return out

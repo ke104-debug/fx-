@@ -298,14 +298,9 @@ def run(h, deep=False, dry=False) -> list[tuple[str, str, str]]:
         st = json.load(open(STATE))
     except Exception:
         st = {}
-    day = f"{(_now() + pd.Timedelta(hours=9)):%Y-%m-%d}"
-    bad = [r for r in rows if not r["ok"] and st.get(r["check"]) != day]
-    if bad:
-        msgs.append(("wait", "🔧 点検部隊: システムの問題を見つけました",
-                     "\n".join(f"・**{r['check']}**: {r['detail'][:300]}" for r in bad)
-                     + "\n━━━━━━━━━━\n売買の判断に関わる問題は、直るまで該当の合図を疑ってください。修正は Claude に依頼してください"))
-        for r in bad:
-            st[r["check"]] = day
+    # 未解決の問題の台帳とボスAIの督促 (2026-11-27 利用者の指摘 K006: NG を『よくあること』と流させない)
+    from .org import boss
+    msgs += boss.track_issues(rows, deep=deep, dry=dry)
     if not dry:
         os.makedirs(os.path.dirname(STATE) or ".", exist_ok=True)
         json.dump(st, open(STATE, "w"), ensure_ascii=False)
