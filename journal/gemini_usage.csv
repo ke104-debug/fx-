@@ -388,3 +388,4 @@ time_utc,pt_day,job,model,outcome,code,tokens
 2026-11-27 12:50:19,2026-11-27,15分の見立て,gemini-3.6-flash,fail,TimeoutError,0
 2026-11-27 12:50:22,2026-11-27,ニュース,gemini-3.6-flash,fail,TimeoutError,0
 2026-11-27 13:05:08,2026-11-27,15分の見立て,gemini-3.6-flash,ok,,1384
+2026-11-27 13:20:28,2026-11-27,15分の見立て,gemini-3.6-flash,ok,,1722
