@@ -26,6 +26,21 @@ def clean(x: str) -> str:
     return x
 
 
+# 作戦ごとの利確・決済のタイミング (23年の検証で使った決済そのもの。2026-11-27 利用者の要望: チャンス通知に利確のタイミングを必ず付ける)
+# 転換ラインでの早めの利確・途中で損切りを建値に動かすことは、どの作戦でも成績が下がったので勧めない
+EXIT_PLAN = {
+    "SF": ["利確: {target:.2f} に届いたら (損切り幅の2倍)。注文 (IFD-OCO) で置いておく",
+           "届かなければ 24時間後に、損益にかかわらず決済 (通知します)",
+           "途中で損切りは動かさない (建値に動かすと23年の成績が下がる)"],
+    "S": ["利確の値は置かずに伸ばす",
+          "1R (損切り幅と同じだけ) 進んだら損切りを建値へ、その後は最も伸びた値から2ATR後ろへ引き上げ (その都度通知)",
+          "引き上げた損切りに届いたら決済 (通知します)。最長9日"],
+    "TF": ["利確の値は置かずに伸ばす (数日〜数週間)",
+           "最も伸びた値から 5×日足ATR 後ろへ損切りを引き上げ (10pips 以上上げたら通知)",
+           "毎朝10時に流れが下向きに変わったら決済 (通知します)"],
+}
+
+
 def _stats(key):
     try:
         import json, os
@@ -56,7 +71,7 @@ def signal(side: int, entry: float, stop: float, target: float | None, conf: int
         f"**判断　　: {'見送り' if no_trade else word}**",
         f"**エントリー: {lo:.2f} 〜 {hi:.2f}**",
         f"**損切り　: {stop:.2f}**（{pips(entry, stop, side):+d} pips）",
-        f"**利確　　: {target:.2f}**（{pips(entry, target, side):+d} pips）",
+        (f"**利確　　: 置かない (伸ばす)**" if key in ("S", "TF") else f"**利確　　: {target:.2f}**（{pips(entry, target, side):+d} pips）"),
         f"**信頼度　: {conf}%**　損益比 1 : {rr:.1f}" + conf_note,
         f"**遅れた時: {entry + side * max(0.05, 0.3 * abs(entry - stop)):.2f} より不利なら入らない**（通知から60分を過ぎたら見送り）",
         "━━━━━━━━━━",
@@ -66,5 +81,7 @@ def signal(side: int, entry: float, stop: float, target: float | None, conf: int
     lines += ["理由"] + [f"・{clean(x)}" for x in reasons[:3]]
     if cautions:
         lines += ["", "注意"] + [f"・{clean(x)}" for x in cautions[:3]]
+    if key in EXIT_PLAN:   # 利確・決済のタイミング (検証した決済そのもの)
+        lines += ["", "利確・決済のタイミング"] + [f"・{x.format(target=target, stop=stop)}" for x in EXIT_PLAN[key]]
     lines += ["", f"有効: {valid}", "※AIの分析であり利益を保証しません"]
     return title, "\n".join(lines)

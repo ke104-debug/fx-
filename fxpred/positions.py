@@ -118,9 +118,10 @@ def check(bars: list[tuple], save_state: bool = True) -> list[tuple[str, str, in
         # 利確までの半分まで進んだら、損切りを建値に動かす提案 (1回だけ。伸ばす取引では出さない)
         prog = side * (c - e) / max(abs(tgt - e), 1e-9)
         if not trail and prog >= 0.5 and not p.get("half_sent"):
+            # 2026-11-27: 以前は「損切りを建値に移す」と勧めていたが、急変に付いていくでは成績が下がる (+0.21R → +0.18R) ので勧めない
             out.append((f"🔵 含み益 USD/JPY ({word} {e:.2f})",
-                        f"**現在 {c:.2f}**（{side * (c - e) * 100:+.0f} pips、利確まで{(1 - prog) * 100:.0f}%）\n"
-                        f"損切りを建値 {e:.2f} に移すと、負けなしで利確を待てます。", 3447003))
+                        f"**現在 {c:.2f}**（{side * (c - e) * 100:+.0f} pips、利確 {tgt:.2f} まで{(1 - prog) * 100:.0f}%）\n"
+                        f"損切りは動かさず、利確 {tgt:.2f} か期限まで待つのが検証どおりです (途中で建値に動かすと23年の成績が下がる)。", 3447003))
             p["half_sent"] = True
         p["checked"] = now
         keep.append(p)
