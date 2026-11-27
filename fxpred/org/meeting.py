@@ -264,11 +264,20 @@ def final(h: pd.DataFrame, ops: list[dict] | None = None) -> dict:
                 res["conclusion"] += "。※ニュースを読んだAIと逆向き"
     except Exception as e:
         print("監査の反映のエラー:", e)
+    try:   # ボスAI (組織の最上位): 全統括AIの結論を確かめ、決まりに合わなければ覆す
+        from . import boss
+        b = boss.review(res, h)
+        res["boss"] = b
+        res["supervisor_conclusion"] = res["conclusion"]
+        res["conclusion"] = b["conclusion"]
+    except Exception as e:
+        print("ボスAIのエラー:", e)
     return res
 
 
 def text(res: dict) -> str:
-    L = [f"【全統括AI】{res.get('conclusion', res['verdict'])}",
+    L = ([__import__("fxpred.org.boss", fromlist=["x"]).line(res["boss"])] if res.get("boss") else []) + \
+        [f"【全統括AI】{res.get('supervisor_conclusion', res.get('conclusion', res['verdict']))}",
          f"【方向の会議】{res['verdict']} (強さ {res['overall']:+.2f})" + ("　※24時間以内に重要指標" if res["caution"] else "")]
     if "market" in res:
         L.append(f"【市場判断統括】{res['market']['text']}")
@@ -375,6 +384,12 @@ def _groq_ok(job):
 def log(h: pd.DataFrame) -> dict:
     """影の運用: 会議の結果を journal/org.csv に1時間1行で残す (通知はしない)"""
     res = final(h)
+    try:
+        from . import boss
+        if res.get("boss"):
+            boss.log(res["boss"], res)
+    except Exception as e:
+        print("ボスAIの記録のエラー:", e)
     ops = res["ops"]
     # 30分ごとに1行 (毎時の分析は1時間に2回動く)。価格は最新の1分足に近い値を使う
     _now = pd.Timestamp.now(tz="UTC")

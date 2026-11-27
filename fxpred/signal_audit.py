@@ -93,4 +93,16 @@ def gate(side: int) -> tuple[bool, list[str]]:
     if blk:
         return True, ["点検部隊が問題を検出中のため送らない: " + " / ".join(blk)]
     notes = [f"監査AI: {x}" for x in audit_notes()]
+    try:   # ボスAI (組織の最上位) の直近の判断
+        import os
+        b = pd.read_csv(os.path.join(os.path.dirname(__file__), "..", "journal", "boss.csv")).iloc[-1]
+        if pd.Timestamp(b.time_utc, tz="UTC") >= pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=1.5):
+            if b.boss == "停止":
+                return True, [f"ボスAIが停止中: {b.overrides}"]
+            if int(b.direction) == -side:
+                notes = ["ボスAIの見立てと逆向き (検証済みの作戦なので送るが、慎重に)"] + notes
+            else:
+                notes = ["ボスAI: 承認 (検証済みの作戦・点検の問題なし)"] + notes
+    except Exception as e:
+        print("ボスAIの判断を読めませんでした:", e)
     return False, notes
