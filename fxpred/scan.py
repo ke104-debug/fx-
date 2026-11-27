@@ -272,7 +272,11 @@ def quick_chance(trigger, price):
     except Exception as e:
         print("5分監視のAIの読みを確かめられませんでした:", e)
     reasons = [why] + [x for x in ok if not x.startswith(("相場状態", "価格帯"))]
-    title, body = fmt.signal(side, price, stop, tgt, score, reasons, [x for x in ng] + stop_why,
+    _blk, _notes = signal_audit.gate(side)
+    if _blk:
+        print("(最終関門で止めた) " + " / ".join(_notes))
+        return None
+    title, body = fmt.signal(side, price, stop, tgt, score, reasons, [x for x in ng] + stop_why + _notes[:3],
                              f"{now.tz_convert(JST):%m/%d %H:%M} から最長48時間", serious)
     if not serious:   # 統括補佐AI (Gemini・検証中)
         from .org import aide
@@ -496,6 +500,18 @@ def run(dry=False):
             print(f"(チャンスと判断しないため送らない: 信頼度{score}{'、担当AIと逆向き' if agree < 0 else ''}) {LABEL[key]}")
             st.setdefault("sent", []).append(sig_id)
             continue
+        try:   # 最終関門: 点検部隊の問題があれば止める。監査AIの指摘は注意に必ず書く
+            from . import signal_audit as _sa
+            _blk, _notes = _sa.gate(s["side"])
+            if _blk:
+                print("(最終関門で止めた) " + " / ".join(_notes))
+                log_signal(t, key, s, score, "見送り(点検)", sent=False, conditions="点検")
+                st.setdefault("sent", []).append(sig_id)
+                continue
+            if _notes:
+                body = body.replace("━━━━━━━━━━", "━━━━━━━━━━\n" + "\n".join("⚠️ " + x for x in _notes[:3]), 1)
+        except Exception as e:
+            print("最終関門のエラー:", e)
         if not serious:   # 統括補佐AI (Gemini・検証中) の最終確認を1行添える。合図は止めない
             from .org import aide
             _ad = aide.check(s["side"], s["entry"], s["stop"], s.get("target") or s["entry"] + s["side"] * 2 * abs(s["entry"] - s["stop"]),

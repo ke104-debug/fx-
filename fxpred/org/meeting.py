@@ -246,6 +246,24 @@ def final(h: pd.DataFrame, ops: list[dict] | None = None) -> dict:
     else:
         concl = "様子見 (" + mk["text"] + ")"
     res.update(risk=rh, plans=pl, conclusion=concl, ops=ops, market=mk, stale=dropped, secs=round(_t.time() - t0, 1))
+    # 監査AI と 点検部隊 の指摘を結論に反映する (2026-11-27 利用者の指摘: 意見を言うだけで参考にされていなかった)
+    try:
+        from . import auditor
+        from .. import signal_audit
+        au = auditor.meeting_check(res)
+        blk = signal_audit.inspector_block()
+        res["audit"], res["inspector_block"] = au, blk
+        if blk:
+            res["conclusion"] = "新しく入らない (点検部隊がシステムの問題を検出中: " + blk[0][:40] + ")"
+        else:
+            thin = [x for x in au if "1人の意見でほぼ決まっている" in x]
+            if thin:
+                res["conclusion"] += "。※方向の根拠が1人の意見だけなので、向きは参考程度"
+                res["thin"] = True
+            if any("逆向き" in x for x in au):
+                res["conclusion"] += "。※ニュースを読んだAIと逆向き"
+    except Exception as e:
+        print("監査の反映のエラー:", e)
     return res
 
 

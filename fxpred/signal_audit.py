@@ -50,3 +50,47 @@ def review_open(h: pd.DataFrame, dry=False) -> list[tuple[str, str, str]]:
     if out and not dry:
         positions.save(keep)
     return out
+
+
+# ---------------------------------------------------------------- 監査AI・点検部隊の指摘を判断に使う (2026-11-27 利用者の指摘: 意見を言うだけで参考にされていない)
+CRITICAL = ("合図と作戦の条件", "損切り・利確の向き", "見張り中の取引", "通知している作戦の根拠")   # 売買の判断に関わるものだけ (記録の遅れでは止めない)
+
+
+def inspector_block(hours=2) -> list[str]:
+    """点検部隊の直近の結果で、売買の判断に関わる問題 (CRITICAL) が NG のままなら、その内容を返す"""
+    import os
+    path = os.path.join(os.path.dirname(__file__), "..", "journal", "inspector.csv")
+    try:
+        d = pd.read_csv(path)
+    except Exception:
+        return []
+    d = d[pd.to_datetime(d.time_utc, utc=True) >= pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=hours)]
+    if d.empty:
+        return []
+    last = d.groupby("check").tail(1)
+    bad = last[(last.check.isin(CRITICAL)) & (last.ok.astype(str) != "True")]
+    return [f"{r.check}: {str(r.detail)[:80]}" for r in bad.itertuples()]
+
+
+def audit_notes(hours=1.5) -> list[str]:
+    """監査AIの直近の指摘 (毎時の会議の記録の『監査』欄)"""
+    import os
+    try:
+        o = pd.read_csv(os.path.join(os.path.dirname(__file__), "..", "journal", "org.csv"), usecols=["time_utc", "監査"])
+    except Exception:
+        return []
+    o = o[pd.to_datetime(o.time_utc, utc=True) >= pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=hours)].dropna()
+    if o.empty:
+        return []
+    return [x.strip() for x in str(o["監査"].iat[-1]).split(";") if x.strip()]
+
+
+def gate(side: int) -> tuple[bool, list[str]]:
+    """合図を送る前の最終関門。(止める?, 通知に書く注意)。
+    - 点検部隊が売買の判断に関わる問題を見つけたまま → 止める
+    - 監査AIの指摘 → 通知の注意に必ず書く。『1人の意見でほぼ決まっている』会議の向きと逆の合図は注意を強める"""
+    blk = inspector_block()
+    if blk:
+        return True, ["点検部隊が問題を検出中のため送らない: " + " / ".join(blk)]
+    notes = [f"監査AI: {x}" for x in audit_notes()]
+    return False, notes

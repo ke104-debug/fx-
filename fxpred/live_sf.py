@@ -68,6 +68,11 @@ def check(st: dict, now_epoch: int, price: float):
         scan.log_signal(now.floor("min"), "SF", s, 0, "見送り(動いた後)", sent=False, conditions="遅れ")
         print(f"(急変に付いていく) 確定から {abs(price - s['entry']) * 100:.0f}pips 動いたので見送り")
         return None
+    blk, notes = signal_audit.gate(s["side"])
+    if blk:
+        print("(最終関門で止めた) " + " / ".join(notes))
+        scan.log_signal(now.floor("min"), "SF", s, 0, "見送り(点検)", sent=False, conditions="点検")
+        return None
     rel = positions.conflict(s["side"])
     if rel == "same":
         return None
@@ -76,7 +81,7 @@ def check(st: dict, now_epoch: int, price: float):
     except Exception:
         ss = {}
     reasons = [s["note"], "23年の検証で一番根拠のある作戦 (設定を広く変えても崩れない)"]
-    cautions = ["遅れるほど不利: 通知から15分を過ぎたら見送り"] + (["保有中の取引と逆向き"] if rel == "opposite" else [])
+    cautions = ["遅れるほど不利: 通知から15分を過ぎたら見送り"] + (["保有中の取引と逆向き"] if rel == "opposite" else []) + notes[:3]
     title, body = fmt.signal(s["side"], price, s["stop"], s["target"], 60, reasons, cautions,
                              f"{(now + pd.Timedelta(hours=9)):%m/%d %H:%M} から24時間", None)
     body = body.replace("通知から60分を過ぎたら見送り", "通知から15分を過ぎたら見送り")
