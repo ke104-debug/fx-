@@ -51,7 +51,7 @@ def add(side: int, entry: float, stop: float, target: float, key: str, t_epoch: 
     tr = TRAIL.get(key) if atr else None
     ps.append({"id": f"{key}-{t_epoch}", "side": side, "entry": round(entry, 3), "stop": round(stop, 3), "target": round(target, 3),
                "key": key, "opened": t_epoch, "expire": t_epoch + HOLD_H.get(key, 48) * 3600 * (tr["hold_x"] if tr else 1),
-               "half_sent": False, **({"mode": "trail", "atr": round(atr, 4), "best": round(entry, 3), "risk": abs(entry - stop)} if tr else {})})
+               "half_sent": False, "risk0": round(abs(entry - stop), 4), **({"mode": "trail", "atr": round(atr, 4), "best": round(entry, 3), "risk": abs(entry - stop)} if tr else {})})
     save(ps)
 
 

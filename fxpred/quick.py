@@ -255,6 +255,12 @@ def run(dry=False):
                     st.pop("pending_rebound", None)
         except Exception as e:  # 詳しい分析に失敗しても、簡易監視は止めない
             print("AI分析エラー:", e)
+    try:   # 持ち中の危ない場面をすぐ知らせる (すぐ利確・決済か、持ち続けるかを23年の結果つきで)
+        from . import exit_alert
+        for m_ in exit_alert.check(st, now):
+            out.append(m_)
+    except Exception as e:
+        print("持ち中の危ない場面の確認のエラー:", e)
     try:   # 通知する作戦「急変に付いていく」: 毎時の足の確定直後に確かめる (遅れるほど不利なので5分監視で)
         from . import live_sf
         m_ = live_sf.check(st, now, c)
