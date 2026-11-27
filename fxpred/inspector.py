@@ -300,6 +300,16 @@ def run(h, deep=False, dry=False) -> list[tuple[str, str, str]]:
         st = {}
     # 未解決の問題の台帳とボスAIの督促 (2026-11-27 利用者の指摘 K006: NG を『よくあること』と流させない)
     from .org import boss
+    try:
+        b_rows, b_msgs = boss.discipline(dry=dry)
+        for r in b_rows:
+            r.update(time_utc=f"{_now():%Y-%m-%d %H:%M}", deep=deep)
+            print(f"(ボスAI) {'OK' if r['ok'] else 'NG'} {r['check']}: {r['detail'][:150]}")
+        rows += b_rows
+        msgs += b_msgs
+    except Exception as e:
+        print("ボスAIの引き締めのエラー:", e)
+        rows.append({"check": "ボス: 引き締め", "ok": False, "detail": f"動かなかった ({str(e)[:60]})", "time_utc": f"{_now():%Y-%m-%d %H:%M}", "deep": deep})
     msgs += boss.track_issues(rows, deep=deep, dry=dry)
     if not dry:
         os.makedirs(os.path.dirname(STATE) or ".", exist_ok=True)

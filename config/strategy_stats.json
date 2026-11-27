@@ -56,7 +56,12 @@
    "R": 0.184,
    "n16": 115,
    "R16": 0.122,
-   "source": "scan.shock_signal + 伸ばす決済 (通知と見張りの定義そのもの) 2026-11-27 作り直し"
+   "source": "scan.shock_signal + 伸ばす決済 (通知と見張りの定義そのもの) 2026-11-27 作り直し",
+   "sd": 1.3,
+   "max_streak": 8,
+   "per_week": 0.16,
+   "worst20": -9.0,
+   "note_boss": "S の連敗・最悪の20回は概算 (毎時版の再計算が重いため)"
   },
   "SF": {
    "n": 407,
@@ -64,7 +69,11 @@
    "R": 0.208,
    "n16": 209,
    "R16": 0.225,
-   "source": "lab.shock_follow (通知している定義そのもの) 2026-11-27 作り直し"
+   "source": "lab.shock_follow (通知している定義そのもの) 2026-11-27 作り直し",
+   "sd": 1.358,
+   "max_streak": 7,
+   "per_week": 0.34,
+   "worst20": -6.22
   },
   "TB": {
    "n": 7241,
@@ -79,7 +88,11 @@
    "R": 0.404,
    "n16": 47,
    "R16": 0.57,
-   "source": "quest.fam_trend EMA20/100・追いかけ5ATR・買いのみ (通知の定義そのもの)"
+   "source": "quest.fam_trend EMA20/100・追いかけ5ATR・買いのみ (通知の定義そのもの)",
+   "sd": 2.105,
+   "max_streak": 11,
+   "per_week": 0.09,
+   "worst20": -10.88
   },
   "TL": {
    "n": 5671,
@@ -87,7 +100,11 @@
    "R": 0.113,
    "n16": 2644,
    "R16": 0.153,
-   "source": "flowtiming.trendline_signal (大きな流れ3日+中くらい半日) + 損1ATR・1Rで建値・2ATRで追いかけ・96本、15分足 2004-2026、往復0.2pips"
+   "source": "flowtiming.trendline_signal (大きな流れ3日+中くらい半日) + 損1ATR・1Rで建値・2ATRで追いかけ・96本、15分足 2004-2026、往復0.2pips",
+   "sd": 1.82,
+   "max_streak": 21,
+   "per_week": 4.74,
+   "worst20": -16.55
   }
  }
 }

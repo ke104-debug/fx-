@@ -186,3 +186,120 @@ def open_issues() -> list[str]:
         age = (now - pd.Timestamp(r.first_utc, tz="UTC")).total_seconds() / 3600
         out.append(f"{'🛑' if age >= 24 else '⚠️'} {r.check} ({age:.0f}時間 未解決)")
     return out
+
+
+# ---------------------------------------------------------------- 引き締め (2026-11-27 利用者: 各部隊の暴走と、お互いの甘やかしを引き締めるのがボス)
+# ボスAIは各部隊と別の物差しで見張る。暴走した作戦は自分で止め (config/live.json の paused_by_boss)、戻すのは利用者の承認か再検証の後。
+#  D1 作戦の暴走: 実際の連敗が23年の最大連敗を超えた / 直近20回の合計が23年の最悪の20回より悪い → その作戦を止める
+#  D2 合図の数の暴走: 1週間の合図が23年の平均の3倍 (かつ +5回) を超えた → 暴走の疑い。毎週4回以上のはずの作戦が2週間0回 → 止まっている疑い
+#  D3 一方向の偏り: 方向の会議・速報の AI・調査班の読みが、30回以上で9割以上同じ向き → 偏り
+#  D4 点検の甘さ: ボス自身が、わざと悪い例 (流れと逆の合図・逆向きの損切り・高すぎる手数料) を点検の関数に通し、見逃したら点検が甘くなっている
+#  D5 対応の甘さ: 利用者の指摘・過去のミスで『対応中』のまま3日を超えたもの
+LIVE = os.path.join(ROOT, "config", "live.json")
+
+
+def _pause(key: str, why: str):
+    c = json.load(open(LIVE))
+    if key in c.get("notify", []):
+        c["notify"] = [k for k in c["notify"] if k != key]
+        c.setdefault("paused_by_boss", {})[key] = {"why": why, "date": f"{pd.Timestamp.now(tz='UTC'):%Y-%m-%d %H:%M}"}
+        json.dump(c, open(LIVE, "w"), ensure_ascii=False, indent=1)
+        return True
+    return False
+
+
+def discipline(dry=False) -> tuple[list[dict], list[tuple[str, str, str]]]:
+    rows, msgs = [], []
+    st = json.load(open(os.path.join(ROOT, "config", "strategy_stats.json")))["stats"]
+    live = json.load(open(LIVE)).get("notify", [])
+    # D1
+    try:
+        cl = pd.read_csv(os.path.join(ROOT, "journal", "closed.csv"))
+        cl["key"] = cl.id.astype(str).str.split("-").str[0]
+        bad = []
+        for k in live:
+            g = cl[(cl.key == k) & ~cl.result.astype(str).str.contains("取り消し")]
+            if g.empty or k not in st:
+                continue
+            R = g.pips / g.get("risk_pips", pd.Series([float("nan")] * len(g))).replace(0, float("nan"))
+            loss = (g.pips <= 0).astype(int).tolist()
+            run = 0
+            for x in reversed(loss):
+                if not x:
+                    break
+                run += 1
+            if run > st[k].get("max_streak", 99):
+                bad.append((k, f"{run}連敗 (23年の最大 {st[k]['max_streak']}連敗を超えた)"))
+            last20 = R.dropna().tail(20)
+            if len(last20) == 20 and last20.sum() < st[k].get("worst20", -99):
+                bad.append((k, f"直近20回の合計 {last20.sum():+.1f}R (23年の最悪 {st[k]['worst20']:+.1f}R より悪い)"))
+        for k, why in bad:
+            if not dry and _pause(k, why):
+                msgs.append(("wait", f"🛑 ボスAI: 作戦を停止 ({k})", f"{why}\n23年の検証の範囲を外れたので、通知を止めました。再検証と利用者の承認で戻します"))
+        rows.append({"check": "ボス: 作戦の暴走", "ok": not bad, "detail": " / ".join(f"{k}: {w}" for k, w in bad) or "どの作戦も23年の範囲内"})
+    except Exception as e:
+        rows.append({"check": "ボス: 作戦の暴走", "ok": False, "detail": f"確かめられない ({str(e)[:60]})"})
+    # D2
+    try:
+        sg = pd.read_csv(os.path.join(ROOT, "journal", "signals.csv"))
+        sg["t"] = pd.to_datetime(sg.time_utc, utc=True)
+        now = pd.Timestamp.now(tz="UTC")
+        odd = []
+        for k in live:
+            pw = st.get(k, {}).get("per_week")
+            if not pw:
+                continue
+            n7 = int(((sg.key == k) & (sg.sent.astype(str) == "True") & (sg.t >= now - pd.Timedelta(days=7))).sum())
+            if n7 > max(3 * pw, pw + 5):
+                odd.append(f"{k}: 1週間に {n7}回 (23年の平均 {pw:.1f}回/週) → 暴走の疑い")
+            since = pd.Timestamp(json.load(open(LIVE)).get("added", {}).get(k, "2026-11-27"), tz="UTC")
+            if pw >= 4 and now - since >= pd.Timedelta(days=14):
+                n14 = int(((sg.key == k) & (sg.t >= now - pd.Timedelta(days=14))).sum())
+                if n14 == 0:
+                    odd.append(f"{k}: 2週間 合図が1回も出ていない (23年の平均 {pw:.1f}回/週) → 止まっている疑い")
+        rows.append({"check": "ボス: 合図の数", "ok": not odd, "detail": " / ".join(odd) or "合図の数は23年の範囲内"})
+    except Exception as e:
+        rows.append({"check": "ボス: 合図の数", "ok": False, "detail": f"確かめられない ({str(e)[:60]})"})
+    # D3
+    try:
+        skew = []
+        o = pd.read_csv(os.path.join(ROOT, "journal", "org.csv"), usecols=["time_utc", "verdict"]).tail(96)
+        v = o.verdict[o.verdict.isin(["買い寄り", "売り寄り"])]
+        if len(v) >= 30 and v.value_counts(normalize=True).iat[0] >= 0.9:
+            skew.append(f"方向の会議: {len(v)}回中 {v.value_counts(normalize=True).iat[0]:.0%} が {v.value_counts().index[0]}")
+        for f, col, name in (("news_alerts.csv", "effect", "速報の AI"), ("research.csv", "effect", "調査班")):
+            p = os.path.join(ROOT, "journal", f)
+            if os.path.exists(p):
+                e = pd.read_csv(p)[col].tail(100)
+                e = e[pd.to_numeric(e, errors="coerce").fillna(0) != 0].astype(float)
+                if len(e) >= 30 and max((e > 0).mean(), (e < 0).mean()) >= 0.9:
+                    skew.append(f"{name}: {len(e)}回中 {max((e > 0).mean(), (e < 0).mean()):.0%} が同じ向き")
+        rows.append({"check": "ボス: 一方向の偏り", "ok": not skew, "detail": " / ".join(skew) or "大きな偏りなし"})
+    except Exception as e:
+        rows.append({"check": "ボス: 一方向の偏り", "ok": False, "detail": f"確かめられない ({str(e)[:60]})"})
+    # D4 わざと悪い例を点検の関数に通す (見逃したら点検が甘い)
+    try:
+        from .. import signal_audit, costs
+        soft = []
+        hh = pd.DataFrame({"trend_up": [True] * 3, "Close": [150.0] * 3})
+        if signal_audit.rule_ok("H4", -1, hh)[0]:
+            soft.append("流れと逆の『流れの方向』の合図を通した")
+        if signal_audit.rule_ok("SF", -1, hh)[0]:
+            soft.append("流れと逆の急変に付いていくを通した")
+        if costs.check(150.0, 149.99)[0] != "見送り":
+            soft.append("手数料が損切り幅の2割を超える合図を通した")
+        rows.append({"check": "ボス: 点検の甘さ", "ok": not soft, "detail": " / ".join(soft) or "わざと入れた悪い例をすべて止めた"})
+    except Exception as e:
+        rows.append({"check": "ボス: 点検の甘さ", "ok": False, "detail": f"確かめられない ({str(e)[:60]})"})
+    # D5
+    try:
+        late = []
+        now = pd.Timestamp.now(tz="UTC")
+        for f, name in (("critiques.json", "利用者の指摘"),):
+            for x in json.load(open(os.path.join(ROOT, "config", f))):
+                if "対応中" in str(x.get("status", "")) and now - pd.Timestamp(x["date"], tz="UTC") > pd.Timedelta(days=3):
+                    late.append(f"{name} {x['id']}")
+        rows.append({"check": "ボス: 対応の甘さ", "ok": not late, "detail": " / ".join(late) or "3日を超えて対応中のものなし"})
+    except Exception as e:
+        rows.append({"check": "ボス: 対応の甘さ", "ok": False, "detail": f"確かめられない ({str(e)[:60]})"})
+    return rows, msgs

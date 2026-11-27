@@ -57,13 +57,13 @@ def add(side: int, entry: float, stop: float, target: float, key: str, t_epoch: 
 
 
 def _record(p, px, why, t):
-    import csv
-    new = not os.path.exists(CLOSED)
-    with open(CLOSED, "a", newline="") as f:
-        w = csv.writer(f)
-        if new: w.writerow(["id", "side", "entry", "exit", "pips", "result", "opened", "closed"])
-        w.writerow([p["id"], p["side"], p["entry"], round(px, 3), round(p["side"] * (px - p["entry"]) * 100, 1), why,
-                    time.strftime("%Y-%m-%d %H:%M", time.gmtime(p["opened"])), time.strftime("%Y-%m-%d %H:%M", time.gmtime(t))])
+    """決済の記録。risk_pips (最初の損切り幅) を残し、ボスAIが R で作戦の暴走を見張れるようにする"""
+    import pandas as _pd
+    row = {"id": p["id"], "side": p["side"], "entry": p["entry"], "exit": round(px, 3), "pips": round(p["side"] * (px - p["entry"]) * 100, 1),
+           "result": why, "opened": time.strftime("%Y-%m-%d %H:%M", time.gmtime(p["opened"])), "closed": time.strftime("%Y-%m-%d %H:%M", time.gmtime(t)),
+           "risk_pips": round((p.get("risk0") or p.get("risk") or abs(p["entry"] - p["stop"])) * 100, 1)}
+    old = _pd.read_csv(CLOSED) if os.path.exists(CLOSED) else _pd.DataFrame()
+    _pd.concat([old, _pd.DataFrame([row])]).to_csv(CLOSED, index=False)
 
 
 def check(bars: list[tuple], save_state: bool = True) -> list[tuple[str, str, int]]:
