@@ -233,6 +233,11 @@ def quick_chance(trigger, price):
     score = edge.confidence(ok, agree, len(stop_why), learn.get("cond_weights"))
     send_at = learn.get("send_at_quick", edge.SEND_AT_QUICK)
     key = "S" if kind == "rebound" else "H4"
+    from . import signal_audit
+    _ok, _why = signal_audit.rule_ok(key, side, h)
+    if not _ok:
+        print(f"(合図の点検で止めた) {_why}")
+        return None
     log_signal(now.floor("min"), key, {"side": side, "entry": price, "stop": stop, "target": tgt}, score,
                "見送り" if serious else "買い" if side == 1 else "売り", sent=score >= send_at,
                conditions="|".join(x.split(" ")[0] for x in ok))
@@ -286,6 +291,11 @@ def run(dry=False):
     state_now = rg.NAMES[h.regime.iat[n]]
     st = json.load(open(STATE)) if os.path.exists(STATE) else {}
     msgs = []
+    try:   # 見張り中の合図の点検: 作戦の条件と食い違っていたら、時間外でも取り消しを知らせる
+        from . import signal_audit
+        msgs += signal_audit.review_open(h, dry=dry)
+    except Exception as e:
+        print("見張り中の合図の点検のエラー:", e)
     # 相場状態の変化
     if st.get("regime") != state_now and (state_now == "荒れ" or awake(pd.Timestamp.now(tz="UTC"))):
         MEAN = {"通常": "レンジになりやすい。下値・上値の近くを待つ", "トレンド": "一方向に動きやすい。押し目・戻りを待つ",
@@ -442,6 +452,14 @@ def run(dry=False):
                                          f"{t.tz_convert(JST):%m/%d %H:%M} から{valid}", serious)
             else:
                 print(f"(損小利大の形だが直近の成績がマイナスのため送らない: {g_txt})")
+        try:   # 合図の点検: 作戦の名前どおりの条件を満たしていなければ送らない
+            from . import signal_audit
+            _ok, _why = signal_audit.rule_ok(key, s["side"], h)
+            if not _ok:
+                print(f"(合図の点検で止めた) {_why}")
+                skip = True
+        except Exception as e:
+            print("合図の点検のエラー:", e)
         tags = "|".join(x.split(" ")[0] for x in ok) + ("|損小利大" if big_rr else "") + ("|強さ逆" if strength_against else "")
         log_signal(t, key, s, score, verdict, sent=not skip, conditions=tags)
         if skip:
