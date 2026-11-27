@@ -49,6 +49,12 @@ def check(st: dict, now_epoch: int, price: float, dry=False) -> list[tuple[str, 
         if prev["mid"] != f["mid"]:
             ch.append(f"中くらいの流れ (半日) が {'上→下' if f['mid'] == -1 else '下→上'}")
         out.append((f"🔄 流れの変化 USD/JPY {price:.3f}", " / ".join(ch) + f"\n今の流れ: {ft.words(f)}", 9807270))
+    try:   # 組織の競争リーグ (紙の上の取引を記録するだけ。通知しない)
+        from . import league
+        if not dry:
+            league.record(d, now)
+    except Exception as e:
+        print("競争リーグのエラー:", e)
     # 入る合図 (最後に確定した15分足)
     sig = ft.trendline_signal(d)
     s = int(sig[-1])

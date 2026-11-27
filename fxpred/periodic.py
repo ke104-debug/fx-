@@ -159,6 +159,12 @@ def review(h: pd.DataFrame, days: int, monthly: bool) -> tuple[str, str]:
             lines += ["", "**夜の復習で何度も出た仮説 (直近4週間)**"] + [f"・{x}" for x in nightly.weekly_hypotheses()]
         except Exception as e:
             print("仮説のまとめのエラー:", e)
+        try:   # 組織の競争リーグ (ボスAIが入れ替えを提案する)
+            from . import league
+            league.settle()
+            lines += ["", "**組織の競争リーグ**"] + [f"{x}" for x in league.table()]
+        except Exception as e:
+            print("競争リーグのエラー:", e)
         try:   # 論文からの自主学習 (週1回、無料の arXiv と AI の無料枠。仮説を提案に登録するだけ)
             from . import paperstudy
             lines += ["", "**論文の自主学習**"] + [f"・{x}" for x in paperstudy.run()]

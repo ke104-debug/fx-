@@ -8,7 +8,11 @@
 """
 import numpy as np
 import pandas as pd
-from numba import njit
+try:
+    from numba import njit
+except ImportError:   # 5分監視など numba を入れていない所でも動かす (M018: 入っていないため流れ×タイミングの通知が止まっていた)
+    def njit(*a, **k):
+        return a[0] if a and callable(a[0]) else (lambda f: f)
 
 ERAS = [("2004-07", 2004, 2007), ("2008-09", 2008, 2009), ("2010-12", 2010, 2012), ("2013-15", 2013, 2015),
         ("2016-19", 2016, 2019), ("2020-21", 2020, 2021), ("2022-26", 2022, 2026)]

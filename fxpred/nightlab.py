@@ -128,6 +128,12 @@ def run(force_train=False):
         print("点検部隊のエラー:", e)
     lines = summary()
     try:
+        from . import league
+        league.settle()
+        lines += league.table()
+    except Exception as e:
+        print("競争リーグの採点のエラー:", e)
+    try:
         from . import newswatch
         lines += newswatch.score()
     except Exception as e:

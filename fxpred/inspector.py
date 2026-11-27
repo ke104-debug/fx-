@@ -181,7 +181,24 @@ def c_news(h):
     return True, f"ニュースの読み取り: 24時間で {ok}/{len(g)}回成功"
 
 
-LIGHT = {"合図と作戦の条件": c_signal_rules, "損切り・利確の向き": c_signal_geometry, "見張り中の取引": c_positions,
+def c_live_parts(h):
+    """通知している作戦の部品が、監視と同じ環境 (検証用の部品 numba なし) で動くか (M018: numba が無く流れ×タイミングが一度も動いていなかった)。
+    15分足を実際に読んで合図の計算を最後まで通す"""
+    import subprocess as _sp, sys as _s
+    code = ("import builtins as b; r=b.__import__\n"
+            "def f(n,*a,**k):\n  if n.startswith('numba'): raise ImportError(n)\n  return r(n,*a,**k)\n"
+            "b.__import__=f\nfrom fxpred import live_tl, live_sf, live_flow, exit_alert, newswatch, league, explore as ex, flowtiming as ft\n"
+            "d=ex.bars(tf=None, src=live_tl._bars15()); d=d[d.atr>0]; print(int(ft.trendline_signal(d)[-1]), len(d))")
+    try:
+        p = _sp.run([_s.executable, "-c", code], capture_output=True, text=True, timeout=180, cwd=J())
+    except Exception as e:
+        return False, f"部品の確認が終わらない ({str(e)[:40]})"
+    if p.returncode:
+        return False, "通知している作戦の部品が動かない: " + (p.stderr.strip().splitlines() or ["?"])[-1][:120]
+    return True, f"通知している作戦の部品は監視と同じ環境で動く (15分足 {p.stdout.split()[-1]}本)"
+
+
+LIGHT = {"作戦の部品が動くか": c_live_parts, "合図と作戦の条件": c_signal_rules, "損切り・利確の向き": c_signal_geometry, "見張り中の取引": c_positions,
          "記録の新しさ": c_freshness, "影の運用の記録": c_shadow_alive, "通知している作戦の根拠": c_live_strength,
          "記録ファイルの形": c_csv_shape, "部品の役割": c_roles, "ニュースの読み取り": c_news}
 

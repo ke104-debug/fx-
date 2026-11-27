@@ -31,21 +31,21 @@ def _slope(c: pd.Series, days: float) -> np.ndarray:
     return (c.ewm(span=n).mean().diff(max(n // 20, 1)) > 0).values
 
 
-def flows(d: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+def flows(d: pd.DataFrame, big=None, mid=None) -> tuple[np.ndarray, np.ndarray]:
     """(大きな流れ = 3日の指数平均の向き, 中くらいの流れ = 半日の指数平均の向き)。15分足の本数で直接決める (足の作り方に左右されない)"""
-    return _slope(d.Close, BIG_DAYS), _slope(d.Close, MID_DAYS)
+    return _slope(d.Close, big or BIG_DAYS), _slope(d.Close, mid or MID_DAYS)
 
 
-def trend(d: pd.DataFrame) -> np.ndarray:
+def trend(d: pd.DataFrame, big=None, mid=None) -> np.ndarray:
     """+1 = 大きな流れと中くらいの流れがそろって上、-1 = そろって下、0 = そろわない"""
-    up, up4 = flows(d)
+    up, up4 = flows(d, big, mid)
     return np.where(up & up4, 1, np.where((~up) & (~up4), -1, 0))
 
 
-def trendline_signal(d: pd.DataFrame, w=W, maxd=MAXD) -> np.ndarray:
+def trendline_signal(d: pd.DataFrame, w=W, maxd=MAXD, big=None, mid=None) -> np.ndarray:
     """各足の合図 (+1 買い / -1 売り / 0)。スイングは w 本後に確定したものだけを使う (未来を見ない)"""
     c, H, L = d.Close.values, d.High.values, d.Low.values
-    tr = trend(d)
+    tr = trend(d, big, mid)
     ph, pl = pivots(H, L, w)
     out = np.zeros(len(d), int); his, los = [], []
     for i in range(len(d)):
