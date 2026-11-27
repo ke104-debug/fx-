@@ -45,3 +45,23 @@ def memo(h: pd.DataFrame, res: dict | None = None) -> list[str]:
     except Exception:
         pass
     return out
+
+
+# ファンダメンタルズの添え書き (2026-11-27): 米2年金利の20日の動きと合図の向き。23年: 同じ向きの方が良かった作戦がある (止める条件にはしない)
+FUND_STATS = {"SF": ("+0.25R", "+0.18R"), "TL": ("+0.12R", "+0.11R"), "TF": ("+0.34R", "+0.48R")}
+
+
+def fundamentals_note(side: int, key: str) -> str:
+    try:
+        from .data import _fred
+        us2 = _fred("DGS2")
+        ch = float(us2.iat[-2] - us2.iat[-22])          # 1営業日遅らせた20日の動き
+        same = (ch > 0) == (side == 1)
+        st = FUND_STATS.get(key)
+        txt = f"ファンダメンタルズ: 米2年金利は20日で {ch * 100:+.0f}bp ({'ドル高' if ch > 0 else 'ドル安'}の方向) → この合図と{'同じ向き' if same else '逆向き'}"
+        if st:
+            txt += f" (23年: 同じ向き {st[0]} / 逆向き {st[1]})"
+        return txt
+    except Exception as e:
+        print("ファンダメンタルズの添え書きのエラー:", e)
+        return ""

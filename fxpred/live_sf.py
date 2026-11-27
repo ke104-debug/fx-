@@ -84,7 +84,8 @@ def check(st: dict, now_epoch: int, price: float):
         ss = json.load(open(os.path.join(os.path.dirname(__file__), "..", "config", "strategy_stats.json")))["stats"].get("SF", {})
     except Exception:
         ss = {}
-    reasons = [s["note"], "23年の検証で一番根拠のある作戦 (設定を広く変えても崩れない)"]
+    from .org import infodesk
+    reasons = [s["note"], infodesk.fundamentals_note(s["side"], "SF"), "23年の検証で一番根拠のある作戦 (設定を広く変えても崩れない)"]
     lim = s["entry"] + s["side"] * 0.6 * s["atr"]
     cautions = [f"入る目安: 通知から60分以内、かつ {lim:.3f} より不利な値なら見送り (23年の検証で60分遅れても成績は変わらない)"] + (["保有中の取引と逆向き"] if rel == "opposite" else []) + notes[:3]
     title, body = fmt.signal(s["side"], price, s["stop"], s["target"], 60, reasons, cautions,

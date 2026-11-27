@@ -60,7 +60,8 @@ def check(st: dict, dry=False) -> list[tuple[str, str, str]]:
             if blk:
                 print("(流れ買い) 最終関門で止めた:", notes)
                 return []
-            reasons = [f"日足の流れが上向き (20日平均 > 100日平均)", "23年の検証で両方の期間がプラス (+0.40R・年4〜5回)"]
+            from .org import infodesk
+            reasons = [f"日足の流れが上向き (20日平均 > 100日平均)", infodesk.fundamentals_note(1, "TF"), "23年の検証で両方の期間がプラス (+0.40R・年4〜5回)"]
             cautions = ["数日〜数週間持つ取引。損切りは広め (日足の値幅の2倍) なので量を小さく",
                         f"利確は置かずに伸ばす。最も伸びた値から {TRAIL_ATR:.0f}×日足ATR ({TRAIL_ATR * s['atr']:.2f}円) 後ろに損切りを付いていかせる",
                         "流れが下向きに変わったら (毎朝10時の判断) 決済を知らせる"] + notes

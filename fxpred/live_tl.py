@@ -69,7 +69,8 @@ def check(st: dict, now_epoch: int, price: float, dry=False) -> list[tuple[str, 
         if not dry:
             scan.log_signal(now.floor("min"), KEY, {"side": s, "entry": price, "stop": stop, "target": None}, 0, "見送り(関門)", sent=False, conditions="関門")
         return out
-    reasons = [f"流れ: {ft.words(f)}", "押し目 (戻り) のトレンド転換ラインを15分足で抜けた"]
+    from .org import infodesk
+    reasons = [f"流れ: {ft.words(f)}", "押し目 (戻り) のトレンド転換ラインを15分足で抜けた", infodesk.fundamentals_note(s, KEY)]
     cautions = ["新しい作戦 (試し)。量は小さめに", f"15分以内に入る。{c + s * 0.5 * a:.3f} より不利なら見送り (遅れるほど成績が下がる)", ct] + notes
     title, body = fmt.signal(s, price, stop, None, 0, reasons, cautions, f"{(now + pd.Timedelta(hours=9)):%m/%d %H:%M} から15分以内", None, key=KEY)
     if not dry:
