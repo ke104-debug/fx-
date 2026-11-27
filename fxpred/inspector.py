@@ -201,20 +201,21 @@ def c_log_errors(h):
 def c_ai_code_review(h):
     """直近24時間のコードの変更を AI に読ませて、決まりや作戦の条件との食い違いを探させる (補助。直すのは人と Claude)"""
     try:
-        diff = subprocess.run(["git", "log", "--since=24 hours ago", "-p", "--no-color", "--", "fxpred", "config"],
+        diff = subprocess.run(["git", "log", "--since=24 hours ago", "-p", "--no-color", "-U2", "--", "fxpred/*.py", "fxpred/org/*.py"],
                               capture_output=True, text=True, cwd=ROOT, timeout=60).stdout
     except Exception:
         diff = ""
     if not diff.strip():
         return True, "直近24時間のコードの変更なし"
-    rules = open(J("SYSTEM.md")).read()[:3000]
+    rules = ("作戦の名前どおりの条件で合図を出す (『流れの方向』なら大きな流れと同じ向き)。損切りは買いなら下・売りなら上。"
+             "記録は journal/ に保存。未来の足を使わない。エラーを握りつぶしたら必ず print で残す")
     from .org import groq
     r, who = groq.ask("点検の補助",
                       "あなたは FX の通知システムのコードを点検する係。次の変更 (git diff) に、"
                       "①作戦の名前や説明と中身の食い違い ②損切り・利確・売り買いの向きの間違い ③例外を握りつぶして処理が止まっても気づけない所"
                       " ④記録が保存されない所 ⑤未来の情報が混ざる所 があれば挙げる。推測ではなく diff の中の根拠 (ファイル名と内容) を書く。"
                       '無ければ空。JSON だけ: {"problems": [{"file": "...", "what": "60字以内", "why": "60字以内"}]}\n\n'
-                      f"決まり (抜粋):\n{rules}\n\n変更:\n{diff[:14000]}")
+                      f"決まり:\n{rules}\n\n変更:\n{diff[:6000]}")
     if not isinstance(r, dict):
         return False, "AI を呼べず、コードの変更の点検ができなかった (Groq・Gemini とも)"
     probs = r.get("problems", [])

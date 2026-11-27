@@ -46,11 +46,11 @@ jobs:
         run: |
           git config user.name "ai-fx-bot"
           git config user.email "ai-fx-bot@users.noreply.github.com"
-          for f in journal/inspector.csv reports/inspector.md journal/shadow.csv journal/m15_shadow.csv journal/eur_shadow.csv reports/nightlab.md models config/data_queue.json; do [ -e "$f" ] && git add "$f"; done
+          for f in journal reports/inspector.md reports/nightlab.md models config/data_queue.json; do [ -e "$f" ] && git add "$f"; done
           if ! git diff --cached --quiet; then
             git commit -m "夜の検証部屋 $(date -u +%Y-%m-%dT%H:%MZ)"
             for i in 1 2 3; do
-              git pull --rebase -q && git push -q && break
+              git pull --rebase --autostash -q && git push -q && break
               git rebase --abort 2>/dev/null; sleep 10
             done
           fi
