@@ -17,7 +17,7 @@ from . import dailyplan as dp
 from . import edge
 
 SIGNALS = os.path.join(dp.J, "signals.csv")
-HOLD_H = {"H3": 14, "H4": 48, "H5": 24, "S": 72, "SF": 24}
+HOLD_H = {"H3": 14, "H4": 48, "H5": 24, "S": 72, "SF": 24, "TF": 24 * 30}
 
 
 def evaluate_signals(h: pd.DataFrame) -> pd.DataFrame:

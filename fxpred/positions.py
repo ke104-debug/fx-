@@ -7,7 +7,7 @@ import time
 
 PATH = os.path.join(os.path.dirname(__file__), "..", "journal", "positions.json")
 CLOSED = os.path.join(os.path.dirname(__file__), "..", "journal", "closed.csv")
-HOLD_H = {"H3": 14, "H4": 48, "H5": 24, "S": 72, "SF": 24, "U": 168}   # U = 利用者が自分で登録した取引 (7日)
+HOLD_H = {"H3": 14, "H4": 48, "H5": 24, "S": 72, "SF": 24, "TF": 24 * 120, "U": 168}   # U = 利用者が自分で登録した取引 (7日)
 # 決済・ポジション管理部隊の出口の決め方 (reports/exits.md, 23年): 急変の反動 (S) と東京レンジ抜け (H3) は
 # 利確を置かずに伸ばす方が作る期間・確かめる期間とも良かった → 1R 進んだら損切りを「最高値から 2ATR」に引き上げ続け、期限は3倍
 TRAIL = {"S": dict(after_r=1.0, atr=2.0, hold_x=3), "H3": dict(after_r=1.0, atr=2.0, hold_x=3), "U": dict(after_r=1.0, atr=2.0, hold_x=1)}
@@ -133,4 +133,5 @@ def summary() -> str:
     ps = load()
     if not ps:
         return "保有中なし"
-    return " / ".join(f"{'買' if p['side'] == 1 else '売'} {p['entry']:.2f}(損切 {p['stop']:.2f} 利確 {p['target']:.2f})" for p in ps)
+    return " / ".join(f"{'買' if p['side'] == 1 else '売'} {p['entry']:.2f}(損切 {p['stop']:.2f} "
+                      + ("利確なし・伸ばす" if p.get("key") == "TF" else f"利確 {p['target']:.2f}") + ")" for p in ps)

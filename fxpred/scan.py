@@ -23,7 +23,7 @@ JST = "Asia/Tokyo"
 # (作戦, 相場状態) -> 1回のリスク (資金に対する損失上限)。最大下落20%以内を目安に抑えた設定
 RULES = {("S", "荒れ"): 0.04, ("H4", "通常"): 0.015, ("H5", "通常"): 0.01, ("H3", "通常"): 0.01, ("H3", "トレンド"): 0.015}
 LABEL = {"S": "急変の反動 (流れの方向)", "H3": "東京レンジのロンドン抜け", "H4": "レンジ逆張り (流れの方向)", "H5": "指標発表直後の順張り",
-         "SF": "急変に付いていく (流れの方向)"}
+         "SF": "急変に付いていく (流れの方向)", "TF": "流れ買い・長期"}
 
 
 def notify_keys() -> set:
@@ -67,7 +67,7 @@ def rr_guard(h: pd.DataFrame, last=40, need=10) -> tuple[bool, str]:
     tot = sum(rs)
     return tot >= 0, f"(この形の直近{len(rs)}回の合計 {tot:+.1f}R)"
 EXIT_TEXT = {"eod": "届かなければ当日 日本時間朝5時に手仕舞い", "24h": "届かなければ24時間後に手仕舞い", None: "損切りか利確まで保有 (最長48時間)"}
-EXIT_VALID = {"H3": "当日 朝5時まで", "H4": "最長48時間", "H5": "24時間", "S": "最長72時間", "SF": "24時間"}
+EXIT_VALID = {"H3": "当日 朝5時まで", "H4": "最長48時間", "H5": "24時間", "S": "最長72時間", "SF": "24時間", "TF": "流れが変わるまで (数日〜数週間)"}
 RULE_FN = {"H3": pf.h_tokyo_break, "H4": pf.h_range_trend, "H5": pf.h_event_momo}
 
 
@@ -320,6 +320,12 @@ def run(dry=False):
         msgs += signal_audit.review_open(h, dry=dry)
     except Exception as e:
         print("見張り中の合図の点検のエラー:", e)
+    try:   # 通知する作戦「流れ買い・長期」(研究の関数 quest.fam_trend をそのまま使う)
+        if "TF" in notify_keys():
+            from . import live_flow
+            msgs += live_flow.check(st, dry=dry)
+    except Exception as e:
+        print("流れ買いのエラー:", e)
     try:   # 点検部隊 (毎時): 決めたとおりに動いているか。新しい問題は1日1回知らせる
         from . import inspector
         msgs += inspector.run(h, deep=False, dry=dry)
