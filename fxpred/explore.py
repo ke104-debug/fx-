@@ -96,7 +96,9 @@ def bars(h1: pd.DataFrame | None = None, tf: str = "1h", src: pd.DataFrame | Non
     d["bbw_rank"] = (d.sd20 / c).rolling(500, min_periods=100).rank(pct=True)
     d["ret1_z"] = delta / delta.rolling(500, min_periods=100).std()
     # 大きな流れ (日足相当): 1時間足480本 ≒ 20日。足の長さに合わせて本数を変える
-    per_day = pd.Timedelta("1D") / (d.index[1] - d.index[0]) if len(d) > 1 else 24
+    # 2026-11-27 修正 (M015): 以前は最初の2本の間隔で決めていて、1分足から作った15分足・5分足では週末の切れ目をまたいで「1日1本」になり、
+    # 「20日平均の向き」が実際は「20本の向き」になっていた。いちばん多い間隔 (最頻値) で決める
+    per_day = pd.Timedelta("1D") / pd.Series(d.index[1:] - d.index[:-1]).mode().iat[0] if len(d) > 1 else 24
     per_day = int(round(min(per_day, 288)))
     ema_d = c.ewm(span=20 * per_day).mean()
     d["up_d"] = ema_d.diff(per_day) > 0                     # 20日平均が上向き

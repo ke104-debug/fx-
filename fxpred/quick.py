@@ -255,6 +255,11 @@ def run(dry=False):
                     st.pop("pending_rebound", None)
         except Exception as e:  # 詳しい分析に失敗しても、簡易監視は止めない
             print("AI分析エラー:", e)
+    try:   # 流れ × タイミング (大きな流れ → 流れの変化 → 細かい流れ → トレンド転換ライン)。15分足の確定ごと
+        from . import live_tl
+        out += live_tl.check(st, now, c, dry=dry)
+    except Exception as e:
+        print("流れ×タイミングのエラー:", e)
     try:   # 持ち中の危ない場面をすぐ知らせる (すぐ利確・決済か、持ち続けるかを23年の結果つきで)
         from . import exit_alert
         for m_ in exit_alert.check(st, now):

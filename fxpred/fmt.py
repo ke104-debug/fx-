@@ -38,6 +38,9 @@ EXIT_PLAN = {
     "TF": ["利確の値は置かずに伸ばす (数日〜数週間)",
            "最も伸びた値から 5×日足ATR 後ろへ損切りを引き上げ (10pips 以上上げたら通知)",
            "毎朝10時に流れが下向きに変わったら決済 (通知します)"],
+    "TL": ["利確の値は置かずに伸ばす (最長24時間)",
+           "1R (損切り幅と同じだけ) 進んだら損切りを建値へ、その後は最も伸びた値から2ATR (15分足) 後ろへ引き上げ (その都度通知)",
+           "引き上げた損切りか24時間で決済 (通知します)"],
 }
 
 
@@ -71,7 +74,7 @@ def signal(side: int, entry: float, stop: float, target: float | None, conf: int
         f"**判断　　: {'見送り' if no_trade else word}**",
         f"**エントリー: {lo:.2f} 〜 {hi:.2f}**",
         f"**損切り　: {stop:.2f}**（{pips(entry, stop, side):+d} pips）",
-        (f"**利確　　: 置かない (伸ばす)**" if key in ("S", "TF") else f"**利確　　: {target:.2f}**（{pips(entry, target, side):+d} pips）"),
+        (f"**利確　　: 置かない (伸ばす)**" if key in ("S", "TF", "TL") else f"**利確　　: {target:.2f}**（{pips(entry, target, side):+d} pips）"),
         f"**信頼度　: {conf}%**　損益比 1 : {rr:.1f}" + conf_note,
         f"**遅れた時: {entry + side * max(0.05, 0.3 * abs(entry - stop)):.2f} より不利なら入らない**（通知から60分を過ぎたら見送り）",
         "━━━━━━━━━━",
