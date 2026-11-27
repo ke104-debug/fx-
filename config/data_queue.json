@@ -1,8 +1,5 @@
 [
  {
-  "workflow": "eur-sim.yml"
- },
- {
   "workflow": "duka-m1.yml",
   "inputs": {
    "pair": "EURUSD",
