@@ -2,15 +2,6 @@
  {
   "workflow": "duka-m1.yml",
   "inputs": {
-   "pair": "EURUSD",
-   "start": "2004-01-01",
-   "end": "2015-12-31",
-   "jobs": "16"
-  }
- },
- {
-  "workflow": "duka-m1.yml",
-  "inputs": {
    "pair": "EURJPY",
    "start": "2004-01-01",
    "end": "2015-12-31",
