@@ -20,25 +20,34 @@ CANDIDATES = {
 }
 
 
+START = pd.Timestamp("2026-11-25", tz="UTC")   # ルールの凍結 (影の運用の始まり)
+
+
 def check(h: pd.DataFrame) -> list[dict]:
-    """最新の確定足で影の作戦のシグナルが出ていれば記録する"""
+    """影の作戦の取引を記録する (通知しない)。
+    2026-11-27 の点検で発覚: 以前は「最新の足の合図」だけを探していたが、lab の関数は決済まで終わった取引しか返さないので、
+    一度も記録されていなかった。→ 直近900本で終わった取引を、凍結日以降の分だけ、まだ無いものを足す (結果の R つき)。
+    合図は過去の値動きだけで決まるので、後から記録しても未来の情報は混ざらない"""
     d = lab.prep(h.iloc[-900:])
     if "trend_up" not in d:
         d["trend_up"] = d.Close.ewm(span=480).mean().diff(24) > 0
-    last = d.index[-2]   # range_bounce は次の足の始値で入るので、1本前の確定足までを判定対象にする
     found = []
     for name, c in CANDIDATES.items():
         t = c["fn"](d, **c["params"])
-        t = t[t.time == last] if len(t) else t
+        if not len(t):
+            continue
+        t = t[t.time >= START]
         for r in t.itertuples():
             found.append({"time_utc": f"{r.time:%Y-%m-%d %H:%M}", "strategy": name, "side": int(r.side),
-                          "entry": round(float(d.Open.iat[-1]), 3), "risk_pips": round(float(r.risk), 1)})
-    if found:
-        old = pd.read_csv(PATH) if os.path.exists(PATH) else pd.DataFrame()
-        new = pd.DataFrame(found)
-        if len(old):
-            new = new[~new.time_utc.isin(old.time_utc[old.strategy.isin(new.strategy)])]
+                          "entry": round(float(d.Open.asof(r.time)), 3), "risk_pips": round(float(r.risk), 1),
+                          "exit_utc": f"{r.exit_time:%Y-%m-%d %H:%M}" if hasattr(r, "exit_time") else "",
+                          "R": round(float(r.R), 3) if hasattr(r, "R") else round(float(r.pips) / float(r.risk), 3) if hasattr(r, "pips") and r.risk else ""})
+    new = pd.DataFrame(found)
+    if len(new):
+        old = pd.read_csv(PATH) if os.path.exists(PATH) else pd.DataFrame(columns=new.columns)
+        key = set(zip(old.get("strategy", []), old.get("time_utc", [])))
+        new = new[[(a, b) not in key for a, b in zip(new.strategy, new.time_utc)]]
         if len(new):
             os.makedirs(os.path.dirname(PATH), exist_ok=True)
-            new.to_csv(PATH, mode="a", header=not os.path.exists(PATH), index=False)
-    return found
+            pd.concat([old, new]).to_csv(PATH, index=False)
+    return new.to_dict("records") if len(new) else []

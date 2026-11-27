@@ -296,6 +296,11 @@ def run(dry=False):
         msgs += signal_audit.review_open(h, dry=dry)
     except Exception as e:
         print("見張り中の合図の点検のエラー:", e)
+    try:   # 点検部隊 (毎時): 決めたとおりに動いているか。新しい問題は1日1回知らせる
+        from . import inspector
+        msgs += inspector.run(h, deep=False, dry=dry)
+    except Exception as e:
+        print("点検部隊のエラー:", e)
     # 相場状態の変化
     if st.get("regime") != state_now and (state_now == "荒れ" or awake(pd.Timestamp.now(tz="UTC"))):
         MEAN = {"通常": "レンジになりやすい。下値・上値の近くを待つ", "トレンド": "一方向に動きやすい。押し目・戻りを待つ",

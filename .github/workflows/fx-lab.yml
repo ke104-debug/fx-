@@ -22,6 +22,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 100 }   # 点検部隊が直近24時間のコードの変更を読むため
       - uses: actions/setup-python@v5
         with: { python-version: "3.13", cache: pip }
       - run: pip install -r requirements.txt numba   # 検証の計算を速くする (監視には不要なので別に入れる)
@@ -32,6 +33,11 @@ jobs:
           ls data/m1 | wc -l
       - name: 検証
         run: python -m fxpred.nightlab ${{ inputs.train && '--train' || '' }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
       - name: データ取得・検証の順番待ち (取得が動いていなければ次を始める)
         run: python tools/data_queue.py || echo "順番待ちの処理に失敗 (次の晩にもう一度)"
         env:
@@ -40,7 +46,7 @@ jobs:
         run: |
           git config user.name "ai-fx-bot"
           git config user.email "ai-fx-bot@users.noreply.github.com"
-          for f in journal/m15_shadow.csv journal/eur_shadow.csv reports/nightlab.md models config/data_queue.json; do [ -e "$f" ] && git add "$f"; done
+          for f in journal/inspector.csv reports/inspector.md journal/shadow.csv journal/m15_shadow.csv journal/eur_shadow.csv reports/nightlab.md models config/data_queue.json; do [ -e "$f" ] && git add "$f"; done
           if ! git diff --cached --quiet; then
             git commit -m "夜の検証部屋 $(date -u +%Y-%m-%dT%H:%MZ)"
             for i in 1 2 3; do

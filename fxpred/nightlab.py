@@ -120,6 +120,12 @@ def run(force_train=False):
             train()
         except Exception as e:
             print("モデルを作り直せませんでした:", e)
+    try:   # 点検部隊 (毎晩の詳しい点検: ログ・5分監視の途切れ・AI のコード点検)
+        from . import inspector, scan, regime as rg, notify
+        for kind, title, body in inspector.run(rg.prepare(scan.load_recent()), deep=True):
+            notify.send(title, body, color=16776960)
+    except Exception as e:
+        print("点検部隊のエラー:", e)
     lines = summary()
     try:
         from .org import eurwatch
