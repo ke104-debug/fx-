@@ -583,7 +583,8 @@ def run(dry=False):
     try:   # 相場の状況の定期報告 (日本時間 12・15・18・21・24時): 合図が無くても「見ていて、こう判断している」を伝える
         jn = pd.Timestamp.now(tz="UTC") + pd.Timedelta(hours=9)
         slot = f"{jn:%Y-%m-%d}-{jn.hour}"
-        if jn.hour in (12, 15, 18, 21, 0) and jn.weekday() < 5 + (jn.hour == 0) and st.get("status_slot") != slot and not dry:
+        now_req = os.getenv("FX_STATUS_NOW") == "1"     # 利用者が「今すぐ相場の分析を送って」と頼んだ時 (fx-auto の status)
+        if (now_req or (jn.hour in (12, 15, 18, 21, 0) and jn.weekday() < 5 + (jn.hour == 0) and st.get("status_slot") != slot)) and not dry:
             from .org import meeting as _mt
             res_ = _mt.final(h)
             c_ = h.Close
@@ -595,15 +596,25 @@ def run(dry=False):
                        for r in sg_.itertuples()]
             except Exception:
                 pass
-            active = [LABEL[k] for (k, rg_) in RULES if rg_ == state_now]
+            _nk = notify_keys()
+            active = [LABEL[k] for k in ("SF", "S") if k in _nk] + [LABEL[k] + " (記録のみ)" for (k, rg_) in RULES if rg_ == state_now and k not in _nk]
             body_ = (f"USD/JPY {c_.iat[-1]:.2f} (3時間 {(c_.iat[-1] - c_.iat[-4]) * 100:+.0f}pips / 24時間 {(c_.iat[-1] - c_.iat[-25]) * 100:+.0f}pips)\n"
-                     f"相場の状態: {state_now} → 見張っている作戦: {' / '.join(active) or 'なし'}\n"
+                     f"相場の状態: {state_now} → 通知する作戦: {' / '.join(active) or 'なし'}\n"
                      + (f"結論 (ボスAI): {res_['conclusion']}\nリスク管理部: {res_['risk']['level']}"
                         if __import__("fxpred.org.mode", fromlist=["x"]).simple() else
                         f"全統括AI: {res_['conclusion']}\n方向の会議: {res_['verdict']} ({res_['overall']:+.2f}) / リスク: {res_['risk']['level']}")
                      + "".join(f"\n・{w_}: {y_}" for w_, y_ in res_["risk"]["items"][:2])
                      + "\n━━━━━━━━━━\n直近3時間の合図: " + (" / ".join(ev_) if ev_ else "なし (作戦の条件がそろわなかった)")
                      + "\n保有中: " + __import__("fxpred.positions", fromlist=["x"]).summary())
+            try:   # 統廃合後: 情報部の環境メモと監査・点検部の状態
+                from .org import mode as _md, infodesk as _inf
+                if _md.simple():
+                    from .signal_audit import inspector_block as _ib
+                    body_ += "\n━━━━━━━━━━\n環境メモ (情報部):\n" + "\n".join("・" + x for x in _inf.memo(h, res_)[1:])
+                    _b = _ib()
+                    body_ += "\n監査・点検部: " + ("問題あり → " + _b[0][:60] if _b else "売買に関わる問題なし")
+            except Exception as e:
+                print("環境メモのエラー:", e)
             try:   # ドル・円の強さ
                 from .org import strength as _sg
                 body_ += "\n━━━━━━━━━━\n" + _sg.line()

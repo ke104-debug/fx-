@@ -16,6 +16,10 @@ on:
         description: "テスト通知だけ送る (過去の場面を再現。記録は残さない)"
         type: boolean
         default: false
+      status:
+        description: "今の相場の分析 (定期報告) を今すぐ送る"
+        type: boolean
+        default: false
 permissions:
   contents: write
   actions: read
@@ -48,6 +52,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
+          FX_STATUS_NOW: ${{ inputs.status && '1' || '' }}
       - name: 状態と記録を保存
         if: always()
         uses: actions/cache/save@v4
