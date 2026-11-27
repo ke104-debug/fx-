@@ -198,6 +198,13 @@ def quick_chance(trigger, price):
     now = pd.Timestamp.now(tz="UTC")
     state_now = rg.NAMES[h.regime.iat[n]]
     rv = sp.range_view(h, h.rsi.iat[n])
+    if kind in ("near_support", "near_resistance"):
+        # レンジ逆張り (H4) は「大きな流れの向き」だけ取る (検証済みの H4 と同じ)。
+        # 2026-11-27 まで5分監視のこの道だけ流れの確認が抜けていて、上昇の流れの中で上値の売りを出していた。
+        # 23年: 流れと逆の逆張りは 確かめ16- -0.19R / 2022- -0.16R (流れと同じ向きは 22- +0.08R)
+        if (kind == "near_support") != bool(h.trend_up.iat[n]):
+            print(f"(5分監視) {kind}: 大きな流れと逆向きなので見送り")
+            return None
     if kind == "near_support":
         side, stop, tgt, why = 1, rv["support"] - 0.20, rv["resistance"] - 0.10, f"下値 {rv['support']:.2f} に接近"
     elif kind == "near_resistance":
