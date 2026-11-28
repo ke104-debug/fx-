@@ -422,3 +422,5 @@ time_utc,pt_day,job,model,outcome,code,tokens
 2026-11-27 20:20:02,2026-11-27,調査の確認,gemini-3.5-flash-lite,ok,,1841
 2026-11-27 21:20:04,2026-11-27,調査の確認,gemini-3.5-flash-lite,ok,,1887
 2026-11-27 23:34:13,2026-11-27,ニュース,gemini-3.5-flash-lite,ok,,3599
+2026-11-28 02:21:31,2026-11-27,ニュース,gemini-3.5-flash-lite,ok,,3791
+2026-11-28 02:21:52,2026-11-27,調査の確認,gemini-3.5-flash-lite,ok,,1873
