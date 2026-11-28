@@ -57,6 +57,7 @@ jobs:
             python -m fxpred.quick || echo "5分監視のエラー (次の回で続ける)"
             bash tools/save.sh "記録を更新 (5分監視) $(date -u +%Y-%m-%dT%H:%MZ)" journal
             [ $(( $(date +%s) + 300 )) -gt $end ] && break
+            python3 fxpred/market.py >/dev/null || break   # 市場が閉まっていれば1回で終える (手動で起動した時など)
             w=$(( 300 - ($(date +%s) - t0) )); [ $w -gt 0 ] && sleep $w
           done
         env:
