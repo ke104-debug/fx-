@@ -261,6 +261,11 @@ def run(dry=False):
             out += newswatch.check(st, c, now)
     except Exception as e:
         print("速報の見張りのエラー:", e)
+    try:   # Discord でボスAIと話す (利用者のコメントにボスAIが返信)
+        from .org import discord_chat
+        discord_chat.check(st, dry=dry)
+    except Exception as e:
+        print("Discord の会話のエラー:", e)
     try:   # 流れ × タイミング (大きな流れ → 流れの変化 → 細かい流れ → トレンド転換ライン)。15分足の確定ごと
         from . import live_tl
         out += live_tl.check(st, now, c, dry=dry)

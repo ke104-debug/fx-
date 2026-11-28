@@ -92,7 +92,7 @@ def score(h1m: pd.DataFrame | None = None) -> list[str]:
 
 def weekend_run(dry=False):
     """週末 (市場が閉まっている間) の速報の見張り (利用者の指示 2026-11-28: 土日もニュースを取得する。見逃すと月曜の相場に影響)。
-    1時間ごとに news-watch.yml から呼ぶ。直近70分の新しい見出しだけを読む。状態は5分監視と同じ state/quick.json"""
+    15分ごとに news-watch.yml から呼ぶ。直近25分の新しい見出しだけを読む (15分ごと)。状態は5分監視と同じ state/quick.json"""
     import json
     from . import notify, quick
     st = json.load(open(quick.STATE)) if os.path.exists(quick.STATE) else {}
@@ -100,11 +100,16 @@ def weekend_run(dry=False):
         price = float(quick.fetch_1m()[-1][4])
     except Exception:
         price = float("nan")
-    out = check(st, price, int(time.time()), window_min=70, weekend=True)
+    out = check(st, price, int(time.time()), window_min=25, weekend=True)
     for title, body, color in out:
         print(title); print(body)
         if not dry:
             notify.send(title, body, color=color)
+    try:   # Discord でボスAIと話す (週末も)
+        from .org import discord_chat
+        discord_chat.check(st, dry=dry)
+    except Exception as e:
+        print("Discord の会話のエラー:", e)
     if not dry:
         os.makedirs(os.path.dirname(quick.STATE) or ".", exist_ok=True)
         json.dump(st, open(quick.STATE, "w"), ensure_ascii=False)

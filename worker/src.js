@@ -3,7 +3,7 @@
 // 押すだけで、分析そのものは GitHub Actions で動く。
 //   5分ごと : 5分監視 (fx-quick.yml)          … 為替市場が開いている時間だけ
 //   30分ごと: 毎時の分析・朝の予想 (fx-auto.yml) … 同上。土曜 10:15〜19 (日本時間) は週次の見直しのため1回押す
-//   1時間ごと: 週末の速報の見張り (news-watch.yml) … 市場が閉まっている間だけ (毎時 37〜41分)
+//   15分ごと: 週末の速報の見張り・Discord でのボスAIとの会話 (news-watch.yml) … 市場が閉まっている間だけ
 // 必要な秘密の値 (Cloudflare の Worker の設定 → 変数とシークレット): GH_TOKEN (GitHub のアクセストークン)
 
 const REPO = "ke104-debug/fx-";
@@ -39,7 +39,7 @@ async function tick(env, when) {
     if ((m >= 15 && m < 20) || (m >= 45 && m < 50)) out.push(await dispatch(env, "fx-auto.yml"));
   } else {
     if (weekly) out.push(await dispatch(env, "fx-auto.yml"));
-    if (m >= 37 && m < 42) out.push(await dispatch(env, "news-watch.yml"));   // 土日もニュースを見張る (利用者の指示 2026-11-28)
+    if (m % 15 >= 7 && m % 15 < 12) out.push(await dispatch(env, "news-watch.yml"));   // 土日もニュースを見張り、Discord の会話に答える (15分ごと)
   }
   return out;
 }
