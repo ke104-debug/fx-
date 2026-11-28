@@ -29,13 +29,14 @@ def live_scores(min_rows=48) -> pd.DataFrame:
     d = d.set_index("time_utc").sort_index()
     # 24時間後の価格 (記録の間隔が1時間でも30分でも使えるよう、時刻で探す)
     px = d.price
-    fut = pd.Series(px.reindex(px.index + pd.Timedelta(hours=24), method="nearest", tolerance=pd.Timedelta(minutes=45)).values,
+    u = px[~px.index.duplicated(keep="last")]   # 同じ時刻に2回記録されることがある (毎時の分析が重なった時)
+    fut = pd.Series(u.reindex(px.index + pd.Timedelta(hours=24), method="nearest", tolerance=pd.Timedelta(minutes=45)).values,
                     index=px.index)
     r = (fut - px) * 100        # pips
     rows = []
     skip = {"price", "overall", "verdict", "caution", "risk", "conclusion"}
     for c in d.columns:
-        if c in skip or d[c].dtype == object:
+        if c in skip or not pd.api.types.is_numeric_dtype(d[c]):   # 新しい pandas は文字列を object でなく str 型で読む
             continue
         a = d[c]
         k = a.notna() & r.notna() & (a != 0)

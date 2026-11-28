@@ -25,8 +25,15 @@ def evaluate_signals(h: pd.DataFrame) -> pd.DataFrame:
     if not os.path.exists(SIGNALS):
         return pd.DataFrame()
     s = pd.read_csv(SIGNALS)
+    # 見張りで実際に決済した記録 (取り消し・利確・損切り) があれば、それを結果にする (通知した内容そのもの)
+    cp = os.path.join(dp.J, "closed.csv")
+    closed = pd.read_csv(cp, dtype=str) if os.path.exists(cp) else pd.DataFrame(columns=["id", "opened", "result", "pips"])
     out = []
     for r in s.itertuples():
+        hit = closed[(closed.opened == r.time_utc) & closed.id.str.startswith(f"{getattr(r, 'key', '')}-")]
+        if len(hit):
+            c = hit.iloc[-1]
+            out.append({**r._asdict(), "result": str(c.result), "pips": float(c.pips)}); continue
         t0 = pd.Timestamp(r.time_utc, tz="UTC") + timedelta(hours=1)
         side, e, stop = int(r.side), float(r.entry), float(r.stop)
         tgt = float(r.target) if str(r.target) not in ("", "nan") else e + side * 2 * abs(e - stop)
@@ -60,9 +67,26 @@ def review(h: pd.DataFrame, days: int, monthly: bool) -> tuple[str, str]:
         ev = ev[ev.t >= since]
     sent = ev[ev.sent.astype(str) == "True"] if not ev.empty else ev
     skipped = ev[ev.sent.astype(str) == "False"] if not ev.empty else ev
-    lines += ["**シグナルの成績**", f"送った: {_stats(sent) if len(sent) else '0回'}",
-              f"見送った (もし入っていたら): {_stats(skipped) if len(skipped) else '0回'}"]
+    sent_s = sent.copy()
+    if len(sent_s):
+        sent_s["sent"] = "True"
+    cancel = sent_s[sent_s.result.astype(str).str.contains("取り消し")] if len(sent_s) else sent_s
+    pending = sent_s[sent_s.result == "判定待ち"] if len(sent_s) else sent_s
+    lines += ["**シグナルの成績**",
+              f"送った合図: {len(sent_s)}回 (結果が出た {len(sent_s) - len(pending) - len(cancel)}回: "
+              f"{_stats(sent_s.drop(cancel.index).drop(pending.index)) if len(sent_s) else '0回'} / 誤りで取り消し {len(cancel)}回 / 進行中 {len(pending)}回)"]
+    for r in sent_s.itertuples():
+        side = "買い" if int(r.side) == 1 else "売り"
+        res = r.result if r.result != "判定待ち" else "進行中"
+        pips = "" if pd.isna(r.pips) else f" {r.pips:+.1f}pips"
+        miss = (" ← システムの誤り (取り消し)" if "取り消し" in str(r.result)
+                else " (結果は勝ちだが、作戦の条件に合っていなかった合図: M001)" if "取り消し" in str(r.verdict) else "")
+        lines.append(f"・{(pd.Timestamp(r.time_utc, tz='UTC') + timedelta(hours=9)):%m/%d %H:%M} {r.strategy} {side} {float(r.entry):.3f} → {res}{pips}{miss}")
+    if len(cancel):
+        lines.append(f"うちシステムの誤りで取り消した合図 {len(cancel)}回 (取り消しの通知の時点の値段で計算。実際に損切りした場合の損は記録していない)")
+    lines.append(f"記録だけの作戦 (通知していない旧い作戦 H3/H4 など。手数料を引かない参考): {_stats(skipped) if len(skipped) else '0回'}")
     if len(sent):
+        sent = sent.drop(cancel.index)
         b = pd.cut(sent.confidence, [0, 64, 74, 100], labels=["55〜64%", "65〜74%", "75%以上"])
         for lab, g in sent.groupby(b, observed=True):
             lines.append(f"・信頼度{lab}: {_stats(g)}")
@@ -120,10 +144,13 @@ def review(h: pd.DataFrame, days: int, monthly: bool) -> tuple[str, str]:
     json.dump(learn, open(dp.LEARN, "w"), ensure_ascii=False, indent=1)
     try:   # 進言AI (AIの組織の足りない部分・弱っている部分)
         from .org import advisor, auditor, review as org_review
-        lines += ["", "**改善研究部隊・進言AI**"] + [f"・{x}" for x in advisor.advise()]
-        lines += ["", "**シミュレーション・検証部隊 (進言の再検証)**"] + [f"・{x}" for x in org_review.run()]
-        from .org import aide
-        lines += ["", "**統括補佐AI の答え合わせ**"] + [f"・{x}" for x in aide.score(h)]
+        for title, fn in [("改善研究部隊・進言AI", advisor.advise), ("シミュレーション・検証部隊 (進言の再検証)", org_review.run),
+                          ("統括補佐AI の答え合わせ", lambda: __import__("fxpred.org.aide", fromlist=["x"]).score(h))]:
+            try:   # 1つの部の失敗で、後ろの見直し (競争リーグ・論文・CFTC・監査など) が全部消えないように
+                lines += ["", f"**{title}**"] + [f"・{x}" for x in fn()]
+            except Exception as e:
+                lines += ["", f"**{title}**", f"・⚠️ エラーで作れませんでした ({str(e)[:60]})"]
+                print(f"{title}のエラー:", e)
         from .org import quick_ai
         lines += [f"・{x}" for x in quick_ai.score(h)]
         from .org import postmortem
@@ -188,7 +215,7 @@ def review(h: pd.DataFrame, days: int, monthly: bool) -> tuple[str, str]:
             print("準備度のエラー:", e)
         lines += ["", "**監査AI (問題点)**"] + [f"・{x}" for x in _found + auditor.ai_audit(_found, _res)]
     except Exception as e:
-        print("進言AIのエラー:", e)
+        import traceback; traceback.print_exc(); print("進言AIのエラー:", e)
     title = f"📊 {'月次' if monthly else '週次'}の見直し USD/JPY ({(since + timedelta(days=1)).tz_convert(dp.JST):%m/%d}〜{h.index[-1].tz_convert(dp.JST):%m/%d})"
     return title, "\n".join(lines)
 
