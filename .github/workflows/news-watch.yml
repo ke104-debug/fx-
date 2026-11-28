@@ -1,0 +1,52 @@
+name: AI_FX 週末の速報の見張り
+# 市場が閉まっている間 (週末) だけ、1時間ごとに要人発言・介入・中央銀行などの新しい見出しを AI に読ませ、重要なものを通知する
+# (利用者の指示 2026-11-28: 土日もニュースを取得。見逃すと月曜の相場に影響)。市場が開いている間は5分監視が同じ見張りをする
+# 時計役 (Cloudflare) が毎時37分ごろに押す。GitHub の定期実行は予備。公開リポジトリのため無料、AI は Groq/Gemini の無料枠
+on:
+  schedule:
+    - cron: "37 22-23 * * 5"
+    - cron: "37 * * * 6"
+    - cron: "37 0-19 * * 0"
+  workflow_dispatch: {}
+permissions:
+  contents: write
+concurrency:
+  group: fx-quick       # 5分監視と同じ状態 (見た見出し) を使うので、同時に動かさない
+  cancel-in-progress: false
+jobs:
+  news:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: 市場が閉まっているか (開いている間は5分監視が見張るので何もしない)
+        id: mk
+        run: if python3 fxpred/market.py; then echo "closed=false" >> "$GITHUB_OUTPUT"; else echo "closed=true" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/setup-python@v5
+        if: steps.mk.outputs.closed == 'true'
+        with: { python-version: "3.13", cache: pip }
+      - if: steps.mk.outputs.closed == 'true'
+        run: pip install -r requirements.txt
+      - name: 見た見出しの記録を復元
+        if: steps.mk.outputs.closed == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: state/quick.json
+          key: fx-quick-${{ github.run_id }}
+          restore-keys: fx-quick-
+      - name: 見張る
+        if: steps.mk.outputs.closed == 'true'
+        run: |
+          git config user.name "ai-fx-bot"
+          git config user.email "ai-fx-bot@users.noreply.github.com"
+          python -m fxpred.newswatch || echo "速報の見張りのエラー"
+          bash tools/save.sh "記録を更新 (週末の速報の見張り) $(date -u +%Y-%m-%dT%H:%MZ)" journal
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      - uses: actions/cache/save@v4
+        if: always() && steps.mk.outputs.closed == 'true'
+        with:
+          path: state/quick.json
+          key: fx-quick-${{ github.run_id }}

@@ -16,18 +16,18 @@ QUERIES = [("為替介入 OR 財務官 OR 財務相 為替 OR 円安けん制", 
 JST = pd.Timedelta(hours=9)
 
 
-def check(st: dict, price: float, now_epoch: int) -> list[tuple[str, str, int]]:
+def check(st: dict, price: float, now_epoch: int, window_min: int = 40, weekend: bool = False) -> list[tuple[str, str, int]]:
     from . import specialists as sp
     seen = set(st.get("news_seen", []))
     now = pd.Timestamp(now_epoch, unit="s", tz="UTC")
     fresh = []
     for q, lang in QUERIES:
-        for x in sp.headlines(query=q, hours=1, lang=lang)[:10]:
+        for x in sp.headlines(query=q, hours=max(1, -(-window_min // 60)), lang=lang)[:10]:
             k = x["title"][:60]
             if k in seen:
                 continue
             seen.add(k)
-            if now - x["time"] <= pd.Timedelta(minutes=40):
+            if now - x["time"] <= pd.Timedelta(minutes=window_min):
                 fresh.append(x)
     st["news_seen"] = list(seen)[-400:]
     if not fresh or not st.get("news_primed"):
@@ -54,7 +54,8 @@ def check(st: dict, price: float, now_epoch: int) -> list[tuple[str, str, int]]:
         arrow = "↑ ドル高・円安の方向" if eff > 0 else "↓ ドル安・円高の方向" if eff < 0 else "向きは不明"
         out.append((f"📰 速報 (重要度{imp}) USD/JPY {price:.3f}",
                     f"**{it.get('要点', '')}**\n{(x['time'] + JST):%H:%M} {x['title'][:90]}\n━━━━━━━━━━\nAI の読み ({who}): {arrow} (強さ {eff:+d})\n"
-                    "※AI の読みはまだ検証中 (答え合わせを記録しています)。売買の合図ではありません。急変すれば急変の通知と作戦の合図が別に届きます",
+                    "※AI の読みはまだ検証中 (答え合わせを記録しています)。売買の合図ではありません。急変すれば急変の通知と作戦の合図が別に届きます"
+                    + ("\n🗓️ 市場は週末で閉まっています。月曜の開始 (日本時間 朝6〜7時) に窓を開けて始まる可能性があります。値段は金曜の終値" if weekend else ""),
                     15105570 if imp >= 3 else 16776960))
     if rows:
         old = pd.read_csv(LOG) if os.path.exists(LOG) else pd.DataFrame()
@@ -87,3 +88,29 @@ def score(h1m: pd.DataFrame | None = None) -> list[str]:
         return [f"速報の見張り: 記録 {len(d)}件 (答え合わせできる向きつきはまだなし)"]
     s = pd.DataFrame(res, columns=["imp", "h15", "h60", "mv"])
     return [f"速報の見張り: 向きつき {len(s)}件、AI の読みの当たり 15分後 {s.h15.mean():.0%} / 60分後 {s.h60.mean():.0%}、60分の動きの平均 {s.mv.mean():.0f}pips"]
+
+
+def weekend_run(dry=False):
+    """週末 (市場が閉まっている間) の速報の見張り (利用者の指示 2026-11-28: 土日もニュースを取得する。見逃すと月曜の相場に影響)。
+    1時間ごとに news-watch.yml から呼ぶ。直近70分の新しい見出しだけを読む。状態は5分監視と同じ state/quick.json"""
+    import json
+    from . import notify, quick
+    st = json.load(open(quick.STATE)) if os.path.exists(quick.STATE) else {}
+    try:
+        price = float(quick.fetch_1m()[-1][4])
+    except Exception:
+        price = float("nan")
+    out = check(st, price, int(time.time()), window_min=70, weekend=True)
+    for title, body, color in out:
+        print(title); print(body)
+        if not dry:
+            notify.send(title, body, color=color)
+    if not dry:
+        os.makedirs(os.path.dirname(quick.STATE) or ".", exist_ok=True)
+        json.dump(st, open(quick.STATE, "w"), ensure_ascii=False)
+    print(f"週末の速報の見張り: 通知 {len(out)}件")
+
+
+if __name__ == "__main__":
+    import sys
+    weekend_run(dry="--dry" in sys.argv)
