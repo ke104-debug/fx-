@@ -3,7 +3,8 @@ name: AI_FX 5分監視
 # 信頼度が基準以上なら通知 (活動時間内)。普段は何も送らず数十秒で終わる。公開リポジトリのため無料。
 on:
   schedule:
-    - cron: "3-58/5 * * * 0-5"   # 0分ちょうどの混雑を避けて 3,8,13…分に。GitHub の混雑で遅れたり飛ばされることがあります
+    - cron: "3-58/5 * * * 1-5"   # 0分ちょうどの混雑を避けて 3,8,13…分に。GitHub の混雑で遅れたり飛ばされることがあります
+    - cron: "3-58/5 20-23 * * 0" # 日曜は市場が開く 20時 (UTC) から。金曜 22時以降・土曜は中で止める (fxpred/market.py)
   workflow_dispatch: {}
 permissions:
   contents: write
@@ -13,7 +14,20 @@ concurrency:
   group: fx-quick
   cancel-in-progress: false
 jobs:
+  gate:   # 市場が閉まっている間 (金曜 22時〜日曜 20時 UTC) の GitHub の定期実行は、ここで終わる (週末の無駄な実行を止める)
+    runs-on: ubuntu-latest
+    outputs:
+      open: ${{ steps.mk.outputs.open }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { sparse-checkout: fxpred/market.py, sparse-checkout-cone-mode: false }
+      - id: mk
+        run: |
+          # 手動・時計役 (worker は市場が開いている時と週次だけ押す) の実行はそのまま動かす。GitHub の定期実行だけ市場の時間で止める
+          if [ "${{ github.event_name }}" != "schedule" ] || python3 fxpred/market.py; then echo "open=true" >> "$GITHUB_OUTPUT"; else echo "open=false" >> "$GITHUB_OUTPUT"; fi
   quick:
+    needs: gate
+    if: needs.gate.outputs.open == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
